@@ -1,0 +1,100 @@
+[
+ {
+  "Id": "6c3c63b670f4",
+  "Names": [
+   "/mc-node-exporter"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "7ded46f516a1",
+  "Names": [
+   "/mc-smartctl-exporter"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "edac4d7f386f",
+  "Names": [
+   "/mc-prometheus"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "5df8564a4684",
+  "Names": [
+   "/tailscale"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "cbcf08a32c6b",
+  "Names": [
+   "/dockerproxy"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "9bd5a2285ccd",
+  "Names": [
+   "/netwatch"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "6c990db8c1ae",
+  "Names": [
+   "/homepage"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "ab4b26021d0d",
+  "Names": [
+   "/speedtest-tracker"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "06416925fa1c",
+  "Names": [
+   "/glances"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "5858356cd2df",
+  "Names": [
+   "/uptime-kuma"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "7a1ba212e41b",
+  "Names": [
+   "/autobangumi"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "54998fb44912",
+  "Names": [
+   "/dockge"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "ce3edf17addd",
+  "Names": [
+   "/qbittorrent-app-1"
+  ],
+  "State": "running"
+ },
+ {
+  "Id": "51365115bd61",
+  "Names": [
+   "/adguardhome"
+  ],
+  "State": "running"
+ }
+]

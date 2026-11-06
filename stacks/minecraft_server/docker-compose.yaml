@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  minecraft:
+    image: itzg/minecraft-server:latest
+    container_name: minecraft_server
+    environment:
+      EULA: "TRUE"
+      TYPE: "FABRIC"           # Mod loader type: FABRIC, FORGE, or NEOFORGE
+      VERSION: "26.2"         # Pin a specific version so mods don't break on updates!
+      MODE: "survival"          # Sets default gamemode for joining players
+      DIFFICULTY: "hard"
+      
+      # Admin & Access Control
+      OPS: "Achar0"                          # Replaces 'YourUsername' with your MC name
+      ENABLE_WHITELIST: "TRUE"                     # Turns on whitelist
+      WHITELIST: "Achar0"    # Comma-separated usernames
+    volumes:
+      - /volume1/docker/minecraft_server:/data
+    ports:
+      - "25565:25565"
+    restart: unless-stopped

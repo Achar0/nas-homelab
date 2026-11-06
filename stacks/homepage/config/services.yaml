@@ -1,0 +1,84 @@
+# Overview: one number per card (Glances API). Symbol tint = Apple system colours.
+- Overview:
+    - Processor:
+        icon: mdi-cpu-64-bit-#0A84FF
+        widget:
+          type: customapi
+          url: http://192.168.1.14:61208/api/4/quicklook
+          refreshInterval: 5000
+          mappings:
+            - { field: cpu, label: In use, format: percent }
+    - Memory:
+        icon: mdi-memory-#BF5AF2
+        widget:
+          type: customapi
+          url: http://192.168.1.14:61208/api/4/quicklook
+          refreshInterval: 5000
+          mappings:
+            - { field: mem, label: In use, format: percent }
+    - Temperature:
+        icon: mdi-thermometer-#FF9F0A
+        widget:
+          type: customapi
+          url: http://192.168.1.14:61208/api/4/sensors
+          refreshInterval: 10000
+          mappings:
+            - { field: { 5: value }, label: CPU, format: number, suffix: "°C" }
+            - { field: { 0: value }, label: NVMe, format: number, suffix: "°C" }
+    - Storage:
+        icon: mdi-harddisk-#30D158
+        widget:
+          type: customapi
+          url: http://192.168.1.14:61208/api/4/fs
+          refreshInterval: 60000
+          mappings:
+            - { field: { 0: free }, label: Free, format: bytes }
+
+# Services: only the numbers that change and matter
+- Services:
+    - AdGuard Home:
+        icon: adguard-home.svg
+        href: http://192.168.1.14:8080
+        server: nas
+        container: adguardhome
+        widget:
+          type: adguard
+          url: http://192.168.1.14:8080
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+          fields: ["queries", "blocked", "latency"]
+    - qBittorrent:
+        icon: qbittorrent.svg
+        href: http://192.168.1.14:8888
+        server: nas
+        container: qbittorrent-app-1
+        widget:
+          type: qbittorrent
+          url: http://192.168.1.14:8888
+          username: "{{HOMEPAGE_VAR_QBT_USER}}"
+          password: "{{HOMEPAGE_VAR_QBT_PASS}}"
+          fields: ["download", "upload", "seed"]
+    - Speedtest:
+        icon: sh-speedtest-tracker.svg
+        href: http://192.168.1.14:8765
+        server: nas
+        container: speedtest-tracker
+        widget:
+          type: speedtest
+          url: http://192.168.1.14:8765
+          version: 2
+          key: "{{HOMEPAGE_VAR_SPEEDTEST_KEY}}"
+          bitratePrecision: 0
+
+# Where connections come from (Netwatch); red = known attacker or unexpected inbound
+- Connections:
+    - Network map:
+        icon: mdi-earth-#0A84FF
+        href: http://192.168.1.14:8790
+        description: Last 24 h · red = known attacker or unexpected inbound
+        widget:
+          type: iframe
+          name: netwatch
+          src: http://192.168.1.14:8790
+          classes: netwatch-frame
+          loadingStrategy: eager

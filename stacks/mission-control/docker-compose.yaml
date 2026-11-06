@@ -1,0 +1,78 @@
+# Mission Control: performance history + service stats page on :8800.
+# Everything listens on 127.0.0.1 only, except the page itself (web, :8800).
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: mc-prometheus
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:10"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=365d
+      - --web.listen-address=127.0.0.1:9090
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: mc-node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=127.0.0.1:9100
+      - --collector.mdadm
+      - --collector.hwmon
+    volumes:
+      - /:/host:ro,rslave
+
+  # Drive health. Needs raw access to exactly these drives (approved 2026-11-06); not privileged.
+  smartctl-exporter:
+    image: prometheuscommunity/smartctl-exporter:v0.14.0
+    container_name: mc-smartctl-exporter
+    restart: unless-stopped
+    network_mode: host
+    user: root
+    command: ["--web.listen-address=127.0.0.1:9633"]
+    cap_add: [SYS_RAWIO, SYS_ADMIN]
+    devices:
+      - /dev/sda:/dev/sda
+      - /dev/sdb:/dev/sdb
+      - /dev/nvme0:/dev/nvme0
+
+  # Own code: container CPU/RAM + qBittorrent, AdGuard, Speedtest, Tailscale -> 127.0.0.1:9101
+  collector:
+    build: ./collector
+    image: mc-collector:local
+    container_name: mc-collector
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env                 # service logins (not in git, see .env.example)
+    environment:
+      DOCKER_URL: http://127.0.0.1:2375     # read-only docker proxy (homepage stack)
+      QBT_URL: http://127.0.0.1:8888
+      ADGUARD_URL: http://127.0.0.1:8080
+      SPEEDTEST_URL: http://127.0.0.1:8765
+      TAILSCALE_SOCKET: /ts/tailscaled.sock
+    volumes:
+      - /volume1/docker/tailscale/run:/ts:ro   # the folder, not the socket file: survives tailscaled restarts
+
+  # The page (own code): static files + read-only proxy to Prometheus and Netwatch
+  web:
+    build: ./web
+    image: mc-web:local
+    container_name: mc-web
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      PORT: 8800
+      PROM_URL: http://127.0.0.1:9090
+      NETWATCH_URL: http://127.0.0.1:8790
+      DATA_DIR: /data
+    volumes:
+      - ./data/vendor:/data/vendor      # pinned JS libraries, downloaded on first start
+      - ./web/static:/app/static:ro     # page files, editable without a rebuild

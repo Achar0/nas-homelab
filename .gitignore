@@ -1,0 +1,15 @@
+# Secrets and app data never leave the NAS
+.env
+**/.env
+**/data/
+**/config/*.json
+**/conf/
+**/state/
+*.bak*
+*.part
+
+# Local screenshots
+*.png
+.superpowers/
+__pycache__/
+*.pyc

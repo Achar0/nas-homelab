@@ -1,0 +1,23 @@
+# Home: the NAS landing page (attention, news, arrivals, dock). Replaces the gethomepage
+# container on :3001. Own code, see README "Home".
+services:
+  home:
+    build: .
+    image: home:local
+    container_name: home
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env                  # QBT_USER/QBT_PASS, KUMA_API_KEY, NTFY_URL (not in git)
+    environment:
+      PORT: 3001
+      DATA_DIR: /data
+      TZ: Europe/Rome
+      PROM_URL: http://127.0.0.1:9090
+      NETWATCH_URL: http://127.0.0.1:8790
+      DOCKER_URL: http://127.0.0.1:2375     # read-only docker proxy (homepage stack)
+      QBT_URL: http://127.0.0.1:8888
+      KUMA_URL: http://127.0.0.1:3002
+    volumes:
+      - ./data:/data                 # state.json: incidents, dismissals, acknowledgements
+      - ./static:/app/static:ro      # page files, editable without a rebuild
+      - ./feeds.json:/app/feeds.json:ro

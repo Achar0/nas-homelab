@@ -1,0 +1,11 @@
+- Dock:
+    - Mission Control: [{ icon: mdi-monitor-dashboard, href: "http://192.168.1.14:8800" }]
+    - AdGuard:      [{ icon: adguard-home.svg, href: "http://192.168.1.14:8080" }]
+    - qBittorrent:  [{ icon: qbittorrent.svg, href: "http://192.168.1.14:8888" }]
+    - AutoBangumi:  [{ icon: mdi-television-classic, href: "http://192.168.1.14:7892" }]
+    - Speedtest:    [{ icon: sh-speedtest-tracker.svg, href: "http://192.168.1.14:8765" }]
+    - Uptime Kuma:  [{ icon: uptime-kuma.svg, href: "http://192.168.1.14:3002" }]
+    - Dockge:       [{ icon: dockge.svg, href: "http://192.168.1.14:5001" }]
+    - Netwatch:     [{ icon: mdi-earth, href: "http://192.168.1.14:8790" }]
+    - Glances:      [{ icon: glances.svg, href: "http://192.168.1.14:61208" }]
+    - UGOS:         [{ icon: mdi-nas, href: "https://192.168.1.14:9443" }]

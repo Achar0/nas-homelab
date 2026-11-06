@@ -1,0 +1,14 @@
+services:
+  dockge:
+    image: louislam/dockge:1
+    container_name: dockge
+    restart: unless-stopped
+    network_mode: bridge
+    ports:
+      - "5001:5001"
+    environment:
+      DOCKGE_STACKS_DIR: /volume1/docker      # your existing stacks live here
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - /volume1/docker:/volume1/docker       # same path inside and outside, so compose paths match

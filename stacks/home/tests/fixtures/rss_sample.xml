@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/" xmlns:admin="http://webns.net/mvcb/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Il Sole 24 ORE - Tecnologia</title>
+    <link>https://www.ilsole24ore.com</link>
+    <description>Il Sole 24 ORE - Tecnologia</description>
+    <copyright>Copyright 2019 - IlSole24ORE.com</copyright>
+    <language>it-IT</language>
+    <pubDate>Fri, 6 Nov 2026 16:27:18 GMT</pubDate>
+    <lastBuildDate>Fri, 6 Nov 2026 16:27:18 GMT</lastBuildDate>
+    <generator>Nile Wellspring</generator>
+    <image>
+      <title>Il Sole 24 ORE - Tecnologia</title>
+      <url>https://www.ilsole24ore.com/static/img/ilsole24ore-o-2021.svg</url>
+      <link>https://www.ilsole24ore.com</link>
+      <width>356</width>
+      <height>131</height>
+      <description>Il Sole 24 ORE</description>
+    </image>
+    <atom:link href="https://www.ilsole24ore.com/rss/tecnologia.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title><![CDATA[GTA VI, come prepararsi al pre-load e liberare spazio nella console]]></title>
+      <description><![CDATA[Dal 10 novembre sarà possibile scaricare il gioco in anticipo ma sono necessari 212 GB di spazio nella console]]></description>
+      <enclosure url="https://i2.res.24o.it/images2010/S24/Documenti/2026/11/06/Immagini/Ritagli/1c8e3e304f0bad2d99ffed828ad460ebe5949608cb82a5dd-U72348128506cjV-1440x752@IlSole24Ore-Web.jpg" type="image/jpg" length="0"/>
+      <link>https://www.ilsole24ore.com/art/gta-vi-come-prepararsi-pre-load-e-liberare-spazio-console-AJ7M9S5B</link>
+      <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/"><![CDATA[di <a href="https://argomenti.ilsole24ore.com/jader-liberatore.html">Jader Liberatore</a>]]></dc:creator>
+      <guid isPermaLink="false">AJ7M9S5B</guid>
+      <category domain="https://www.ilsole24ore.com">Tecnologia</category>
+      <pubDate>Thu, 5 Nov 2026 06:27:14 GMT</pubDate>
+    </item>
+<item>
+      <title><![CDATA[Data center, elezioni Usa e opinioni artificiali: il doppio inquinamento dell’AI]]></title>
+      <description><![CDATA[Alla vigilia delle elezioni americane, OpenAI pensa di ribattezzare le infrastrutture «AI compute campuses». Intanto deepfake, fonti di parte e risposte automatizzate alterano il dibattito pubblico e l’ascolto dei cittadini.]]></description>
+      <enclosure url="https://i2.res.24o.it/images2010/S24/Documenti/2026/11/03/Immagini/Ritagli/Gemini_Generated_Image_31mqst31mqst31mq_20261102093602-U77620448171bdH-1440x752@IlSole24Ore-Web.jpg" type="image/jpg" length="0"/>
+      <link>https://www.ilsole24ore.com/art/data-center-elezioni-usa-e-opinioni-artificiali-doppio-inquinamento-dell-ai-AJvVqb1B</link>
+      <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/"><![CDATA[di <a href="https://argomenti.ilsole24ore.com/luca-tremolada.html">Luca Tremolada</a>]]></dc:creator>
+      <guid isPermaLink="false">AJvVqb1B</guid>
+      <category domain="https://www.ilsole24ore.com">Tecnologia</category>
+      <pubDate>Mon, 2 Nov 2026 08:38:49 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,19 @@
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: tailscale
+    hostname: nas
+    restart: unless-stopped
+    network_mode: host            # the NAS itself joins the tailnet
+    cap_add: [NET_ADMIN, NET_RAW] # needed to create the tailscale0 interface
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # Run the daemon directly (not the image start-up script, which gives up on
+    # interactive login after 60 s and restarts). Login and settings are kept in
+    # state/, so restarts reconnect on their own.
+    # First-time setup (once):
+    #   docker exec tailscale tailscale up --hostname=nas --advertise-routes=192.168.1.0/24 --accept-dns=false
+    entrypoint: ["tailscaled", "--state=/var/lib/tailscale/tailscaled.state", "--statedir=/var/lib/tailscale", "--tun=tailscale0"]
+    volumes:
+      - ./state:/var/lib/tailscale  # node identity: keep it, or the NAS must log in again
+      - ./run:/var/run/tailscale    # daemon socket, read by Mission Control's collector

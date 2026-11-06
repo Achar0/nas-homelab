@@ -1,0 +1,27 @@
+services:
+  # Retired 2026-11-07: replaced by the own "home" stack on :3001. Kept behind a profile so
+  # `docker compose up -d` here only starts the docker proxy (start it again with --profile old).
+  homepage:
+    profiles: ["old"]
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    env_file: .env          # logins + HOMEPAGE_ALLOWED_HOSTS live here, not in the config
+    volumes:
+      - ./config:/app/config
+    depends_on: [dockerproxy]
+
+  # Read-only window (used by Home and Mission Control) on Docker: only container list + stats, no start/stop/exec
+  dockerproxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    container_name: dockerproxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 0
+    ports:
+      - "127.0.0.1:2375:2375"   # also used by Mission Control's collector (NAS-local only)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

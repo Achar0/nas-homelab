@@ -1,0 +1,23 @@
+[
+ {
+  "name": "torrent-0",
+  "state": "stalledDL",
+  "upspeed": 0,
+  "dlspeed": 0,
+  "ratio": 0
+ },
+ {
+  "name": "torrent-1",
+  "state": "stalledUP",
+  "upspeed": 0,
+  "dlspeed": 0,
+  "ratio": 0
+ },
+ {
+  "name": "torrent-2",
+  "state": "forcedDL",
+  "upspeed": 0,
+  "dlspeed": 0,
+  "ratio": 3.201536573969828
+ }
+]

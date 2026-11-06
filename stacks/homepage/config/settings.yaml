@@ -1,0 +1,20 @@
+title: NAS
+description: Home server dashboard
+color: neutral
+headerStyle: clean
+statusStyle: dot
+hideVersion: true
+useEqualHeights: true
+target: _blank
+layout:
+  Overview:          # system at a glance
+    style: row
+    columns: 4
+  Services:          # apps that report their own stats
+    style: row
+    columns: 1
+  Connections:       # Netwatch map
+    style: row
+    columns: 1
+  Dock:              # floating app dock (styled in custom.css)
+    header: false

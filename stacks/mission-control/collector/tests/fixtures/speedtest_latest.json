@@ -1,0 +1,16 @@
+{
+ "data": {
+  "id": 2,
+  "ping": 4.268,
+  "download": 117038184,
+  "upload": 64078734,
+  "download_bits": 936305472,
+  "upload_bits": 512629872,
+  "status": "completed",
+  "created_at": "2026-11-06 18:00:00",
+  "updated_at": "2026-11-06 18:00:40",
+  "data": {
+   "timestamp": "2026-11-06T17:00:35Z"
+  }
+ }
+}

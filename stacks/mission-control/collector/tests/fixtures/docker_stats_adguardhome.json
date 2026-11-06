@@ -1,0 +1,68 @@
+{
+ "name": "/adguardhome",
+ "cpu_stats": {
+  "cpu_usage": {
+   "total_usage": 155549240000,
+   "usage_in_kernelmode": 33837854000,
+   "usage_in_usermode": 121711385000
+  },
+  "system_cpu_usage": 472988820000000,
+  "online_cpus": 4,
+  "throttling_data": {
+   "periods": 0,
+   "throttled_periods": 0,
+   "throttled_time": 0
+  }
+ },
+ "precpu_stats": {
+  "cpu_usage": {
+   "total_usage": 155539912000,
+   "usage_in_kernelmode": 33835260000,
+   "usage_in_usermode": 121704652000
+  },
+  "system_cpu_usage": 472984780000000,
+  "online_cpus": 4,
+  "throttling_data": {
+   "periods": 0,
+   "throttled_periods": 0,
+   "throttled_time": 0
+  }
+ },
+ "memory_stats": {
+  "usage": 561754112,
+  "stats": {
+   "active_anon": 10330112,
+   "active_file": 61440000,
+   "anon": 469012480,
+   "anon_thp": 402653184,
+   "file": 92741632,
+   "file_dirty": 0,
+   "file_mapped": 21532672,
+   "file_writeback": 0,
+   "inactive_anon": 458678272,
+   "inactive_file": 31305728,
+   "kernel_stack": 0,
+   "pgactivate": 888338,
+   "pgdeactivate": 832338,
+   "pgfault": 206333,
+   "pglazyfree": 0,
+   "pglazyfreed": 0,
+   "pgmajfault": 11438,
+   "pgrefill": 850621,
+   "pgscan": 1100384,
+   "pgsteal": 56146,
+   "shmem": 0,
+   "slab": 0,
+   "slab_reclaimable": 0,
+   "slab_unreclaimable": 0,
+   "sock": 0,
+   "thp_collapse_alloc": 519,
+   "thp_fault_alloc": 75,
+   "unevictable": 0,
+   "workingset_activate": 0,
+   "workingset_nodereclaim": 0,
+   "workingset_refault": 0
+  },
+  "limit": 8092651520
+ }
+}

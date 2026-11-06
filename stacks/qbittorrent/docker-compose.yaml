@@ -1,0 +1,15 @@
+services:
+  app:
+    image: ugreen/qbittorrent:v1
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=Europe/Amsterdam
+      - WEBUI_PORT=8888
+      - TORRENTING_PORT=6888
+    volumes:
+      - ./config:/config
+      - /volume1/Torrent-files:/downloads
+      - /volume1/电影-电视剧-番剧:/media
+    network_mode: host
+    restart: always

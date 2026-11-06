@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>Mission Control</title>
+  <link rel="stylesheet" href="/vendor/uPlot.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <!-- Main flow: the selected metric, big -->
+    <section class="flow" id="flow" aria-label="Performance">
+      <header class="head">
+        <div class="head-text">
+          <p class="eyebrow" id="eyebrow">Processor · last 24 h</p>
+          <p class="hero" id="hero">—</p>
+          <p class="context" id="context" aria-live="polite">&nbsp;</p>
+        </div>
+        <div class="segmented" role="tablist" aria-label="Time range" id="ranges"></div>
+      </header>
+      <div class="chart" id="chart"><div class="legend" id="legend"></div></div>
+      <nav class="tiles" id="tiles" aria-label="Metrics"></nav>
+      <div class="disks" id="disks" aria-label="Disks"></div>
+    </section>
+
+    <!-- Rail: hosted services, each expandable over the main flow -->
+    <aside class="rail" id="rail" aria-label="Services"></aside>
+
+    <!-- Expanded card lives here (over the flow) -->
+    <section class="panel" id="panel" hidden aria-modal="false"></section>
+
+    <!-- Dock: every hosted app, one click away (same as Homepage) -->
+    <nav class="dock" id="dock" aria-label="Apps"></nav>
+  </main>
+
+  <div class="popover" id="popover" hidden></div>
+
+  <script src="/vendor/uPlot.iife.min.js"></script>
+  <script src="/vendor/topojson-client.min.js"></script>
+  <script src="/vendor/globe.gl.min.js"></script>
+  <script type="module" src="app.js"></script>
+  <script type="module" src="cards.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+ "time_units": "hours",
+ "num_dns_queries": 81331,
+ "num_blocked_filtering": 9037,
+ "num_replaced_safebrowsing": 0,
+ "num_replaced_safesearch": 0,
+ "num_replaced_parental": 0,
+ "avg_processing_time": 0.030715,
+ "top_blocked_domains": [
+  {
+   "otheve.beacon.qq.com": 1875
+  }
+ ]
+}

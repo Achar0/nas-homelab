@@ -1,0 +1,9 @@
+{
+ "Self": {
+  "HostName": "device-0",
+  "OS": "linux",
+  "Online": true,
+  "LastSeen": "0001-01-01T00:00:00Z"
+ },
+ "Peer": {}
+}

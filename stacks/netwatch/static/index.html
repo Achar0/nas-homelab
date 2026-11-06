@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connections</title>
+<style>
+  /* Dark palette matching the Homepage cards; transparent so it sits inside a card */
+  :root {
+    --text: #f5f5f7; --text-2: #98989d; --text-3: #636366;
+    --land: #2c2c2e; --border: #1c1c1e; --hair: rgba(255,255,255,.07);
+    --blue: #0a84ff; --red: #ff453a; --green: #30d158;
+    color-scheme: dark;
+  }
+  html, body { margin: 0; height: 100%; background: transparent; color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; overflow: hidden; }
+  .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1.25rem; height: 100%; }
+  #map { position: relative; min-height: 0; }
+  svg { width: 100%; height: 100%; display: block; }
+  .land { fill: var(--land); stroke: var(--border); stroke-width: .5; }
+  .arc { fill: none; stroke: var(--blue); stroke-opacity: .35; stroke-width: 1; }
+  .arc.bad { stroke: var(--red); stroke-opacity: .8; stroke-width: 1.5; }
+  .dot { fill: var(--blue); fill-opacity: .9; cursor: default; }
+  .dot.old { fill-opacity: .35; }
+  .dot.bad { fill: var(--red); fill-opacity: 1; }
+  .home { fill: var(--text); }
+  .home-ring { fill: none; stroke: var(--text); stroke-opacity: .35; }
+  .pulse { fill: none; stroke: var(--red); stroke-width: 1.5; animation: pulse 2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes pulse { from { transform: scale(1); opacity: .9 } to { transform: scale(3.2); opacity: 0 } }
+
+  .tip { position: absolute; pointer-events: none; background: rgba(44,44,46,.92);
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    border: 1px solid var(--hair); border-radius: 10px; padding: .45rem .6rem; font-size: 12px;
+    white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); opacity: 0; transition: opacity 120ms; }
+  .tip b { font-weight: 600; } .tip .mono { color: var(--text-2); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .panel { display: flex; flex-direction: column; min-height: 0; }
+  .stats { display: flex; gap: 1.5rem; }
+  .stat .v { font-size: 1.5rem; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .stat .l { font-size: 12px; color: var(--text-2); font-weight: 500; }
+  .stat.bad .v { color: var(--red); } .stat.ok .v { color: var(--green); }
+  .status { margin: .75rem 0 .5rem; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: .4rem; }
+  .status .d { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
+  .status.bad .d { background: var(--red); }
+  .local { font-size: 12px; color: var(--text-2); margin-bottom: .5rem; }
+  ul { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0;
+    scrollbar-width: thin; scrollbar-color: #3a3a3c transparent; }
+  li { display: grid; grid-template-columns: 8px 1fr auto; gap: .55rem; align-items: center;
+    padding: .45rem 0; border-top: 1px solid var(--hair); }
+  li > div { min-width: 0; }  /* let long place names truncate instead of pushing the time out */
+  li .d { width: 8px; height: 8px; border-radius: 50%; background: var(--blue); }
+  li .d.old { opacity: .35; } li .d.bad { background: var(--red); }
+  li .t { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li .s { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li .s .why { color: var(--red); }
+  li .w { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .foot { font-size: 11px; color: var(--text-3); padding-top: .4rem; }
+  .foot a { color: inherit; }
+  .empty { color: var(--text-2); font-size: 13px; padding: .5rem 0; }
+
+  @media (max-width: 640px) {
+    html, body { overflow: auto; }
+    .wrap { grid-template-columns: 1fr; height: auto; }
+    #map { height: 14rem; }
+    ul { max-height: 18rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; opacity: .6; } .tip { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="map"><svg></svg><div class="tip"></div></div>
+  <div class="panel">
+    <div class="stats">
+      <div class="stat"><div class="v" id="s-live">–</div><div class="l">Live</div></div>
+      <div class="stat"><div class="v" id="s-24">–</div><div class="l">Addresses · 24 h</div></div>
+      <div class="stat" id="s-flag-box"><div class="v" id="s-flag">–</div><div class="l">Flagged</div></div>
+    </div>
+    <div class="status" id="status"><span class="d"></span><span id="status-t">Loading…</span></div>
+    <div class="local" id="local"></div>
+    <ul id="list"></ul>
+    <div class="foot">IP geolocation by <a href="https://db-ip.com" target="_blank" rel="noreferrer">DB-IP</a> · Lists: FireHOL, blocklist.de</div>
+  </div>
+</div>
+<script src="/vendor/d3.min.js"></script>
+<script src="/vendor/topojson-client.min.js"></script>
+<script>
+const svg = d3.select("svg"), tip = document.querySelector(".tip");
+const gLand = svg.append("g"), gArcs = svg.append("g"), gDots = svg.append("g"), gHome = svg.append("g");
+let projection, path, world, data;
+
+function ago(t) {
+  const s = Date.now() / 1000 - t;
+  if (s < 90) return "now";
+  if (s < 3600) return Math.round(s / 60) + " min";
+  return Math.round(s / 3600) + " h";
+}
+const place = h => h.geo ? [h.geo.city, h.geo.country].filter(Boolean).join(", ") : (h.scope === "lan" ? "Local network" : h.scope === "tailscale" ? "Tailscale" : "Unknown");
+
+function layout() {
+  const el = document.getElementById("map"), w = el.clientWidth, h = el.clientHeight;
+  svg.attr("viewBox", `0 0 ${w} ${h}`);
+  // Equal Earth: honest areas, calm shape; crop Antarctica
+  const land = topojson.feature(world, world.objects.countries);
+  land.features = land.features.filter(f => f.id !== "010");
+  projection = d3.geoEqualEarth().fitExtent([[4, 4], [w - 4, h - 4]], land);
+  path = d3.geoPath(projection);
+  gLand.selectAll("path").data(land.features).join("path").attr("class", "land").attr("d", path);
+  render();
+}
+
+function render() {
+  if (!data || !projection) return;
+  const home = [data.home.lon, data.home.lat], hp = projection(home);
+  const pts = data.items.filter(h => h.geo);
+  // great-circle arcs from home
+  gArcs.selectAll("path").data(pts, d => d.ip).join("path")
+    .attr("class", d => "arc" + (d.flag.length ? " bad" : ""))
+    .attr("d", d => path({ type: "LineString", coordinates: [home, [d.geo.lon, d.geo.lat]] }))
+    .attr("stroke-opacity", d => d.flag.length ? null : (d.live ? .45 : .15));
+  const r = d => 2.5 + Math.min(4, Math.log2(1 + d.count / 12));
+  gDots.selectAll("g").data(pts, d => d.ip).join(enter => {
+    const g = enter.append("g");
+    g.append("circle").attr("class", "pulse");
+    g.append("circle").attr("class", "dot");
+    return g;
+  }).each(function (d) {
+    const [x, y] = projection([d.geo.lon, d.geo.lat]);
+    const g = d3.select(this);
+    g.select(".dot").attr("cx", x).attr("cy", y).attr("r", r(d))
+      .attr("class", "dot" + (d.flag.length ? " bad" : d.live ? "" : " old"));
+    g.select(".pulse").attr("cx", x).attr("cy", y).attr("r", r(d)).style("display", d.flag.length ? null : "none");
+  }).on("pointerenter pointermove", (e, d) => {
+    const [x, y] = projection([d.geo.lon, d.geo.lat]);
+    tip.innerHTML = `<b>${place(d)}</b><br><span class="mono">${d.ip}</span> · ${d.services.join(", ")}` +
+      (d.flag.length ? `<br><span style="color:var(--red)">${d.flag.join(" · ")}</span>` : "");
+    tip.style.left = x + "px"; tip.style.top = y + "px"; tip.style.opacity = 1;
+  }).on("pointerleave", () => { tip.style.opacity = 0; });
+  gHome.selectAll("*").remove();
+  gHome.append("circle").attr("class", "home-ring").attr("cx", hp[0]).attr("cy", hp[1]).attr("r", 7);
+  gHome.append("circle").attr("class", "home").attr("cx", hp[0]).attr("cy", hp[1]).attr("r", 3.5);
+}
+
+function panel() {
+  const s = data.summary;
+  document.getElementById("s-live").textContent = s.live_internet;
+  document.getElementById("s-24").textContent = s.internet_24h;
+  document.getElementById("s-flag").textContent = s.flagged_24h;
+  document.getElementById("s-flag-box").className = "stat " + (s.flagged_24h ? "bad" : "ok");
+  const st = document.getElementById("status");
+  st.className = "status" + (s.flagged_24h ? " bad" : "");
+  document.getElementById("status-t").textContent = s.flagged_24h
+    ? `${s.flagged_24h} flagged address${s.flagged_24h > 1 ? "es" : ""} in the last 24 h`
+    : "No known attackers in the last 24 h";
+  document.getElementById("local").textContent =
+    `Local network: ${s.lan_24h} device${s.lan_24h === 1 ? "" : "s"} · Tailscale: ${s.tailscale_24h}` +
+    (s.countries.length ? ` · Top: ${s.countries.slice(0, 3).map(c => c[0]).join(", ")}` : "");
+  const items = data.items.filter(h => h.scope === "internet").slice(0, 60);
+  const ul = document.getElementById("list");
+  ul.innerHTML = items.length ? "" : `<div class="empty">No internet connections yet.</div>`;
+  for (const h of items) {
+    const li = document.createElement("li");
+    const why = h.flag.length ? `<span class="why">${h.flag[0]}</span> · ` : "";
+    li.innerHTML = `<span class="d${h.flag.length ? " bad" : h.live ? "" : " old"}"></span>
+      <div><div class="t">${place(h)}</div><div class="s">${why}${h.services.join(", ")} · ${h.dir === "in" ? "incoming" : "outgoing"} · ${h.ip}</div></div>
+      <span class="w">${h.live ? "now" : ago(h.last)}</span>`;
+    ul.appendChild(li);
+  }
+}
+
+async function refresh() {
+  try {
+    data = await (await fetch("/api/state", { cache: "no-store" })).json();
+    panel(); render();
+  } catch (e) { document.getElementById("status-t").textContent = "Can't reach Netwatch"; }
+}
+
+(async () => {
+  world = await (await fetch("/vendor/countries-110m.json")).json();
+  layout();
+  await refresh();
+  setInterval(refresh, 10000);
+  new ResizeObserver(layout).observe(document.getElementById("map"));
+})();
+</script>
+</body>
+</html>

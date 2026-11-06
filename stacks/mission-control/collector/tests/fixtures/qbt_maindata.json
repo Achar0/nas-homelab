@@ -1,0 +1,29 @@
+{
+ "server_state": {
+  "alltime_dl": 546516711526,
+  "alltime_ul": 214481006340,
+  "average_time_queue": 50,
+  "connection_status": "firewalled",
+  "dht_nodes": 361,
+  "dl_info_data": 246356429,
+  "dl_info_speed": 0,
+  "dl_rate_limit": 0,
+  "free_space_on_disk": 3194553126912,
+  "global_ratio": "0.39",
+  "queued_io_jobs": 0,
+  "queueing": true,
+  "read_cache_hits": "0",
+  "read_cache_overload": "0",
+  "refresh_interval": 1500,
+  "total_buffers_size": 0,
+  "total_peer_connections": 13,
+  "total_queued_size": 0,
+  "total_wasted_session": 22989,
+  "up_info_data": 3384013198,
+  "up_info_speed": 0,
+  "up_rate_limit": 0,
+  "use_alt_speed_limits": false,
+  "use_subcategories": false,
+  "write_cache_overload": "0"
+ }
+}

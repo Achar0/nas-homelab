@@ -1,0 +1,14 @@
+services:
+  adguardhome:
+    image: adguard/adguardhome:latest
+    container_name: adguardhome
+    restart: unless-stopped
+    network_mode: bridge
+    ports:
+      - "192.168.1.14:53:53/tcp"   # LAN IP only, avoids the VM network's DNS on port 53
+      - "192.168.1.14:53:53/udp"
+      - "3000:3000/tcp"            # first-run setup wizard
+      - "8080:80/tcp"              # web UI after setup
+    volumes:
+      - ./work:/opt/adguardhome/work
+      - ./conf:/opt/adguardhome/conf

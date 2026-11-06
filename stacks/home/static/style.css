@@ -1,0 +1,198 @@
+/* Home: same Apple-style system as Mission Control (dark first, light follows the system).
+   Hierarchy: what needs you (pinned) > news > arrivals; NAS numbers on the side; dock at the bottom.
+   Desktop fits one screen; phones stack and scroll. */
+
+:root {
+  color-scheme: dark;
+  --bg: #000000;
+  --card: #1c1c1e;
+  --tile: #2c2c2e;
+  --text: #f5f5f7;
+  --text-2: #98989d;
+  --text-3: #636366;
+  --accent: #0A84FF;
+  --ok: #30D158;
+  --warn: #FF9F0A;
+  --bad: #FF453A;
+  --radius: 18px;
+  --ease: cubic-bezier(0.2, 0.9, 0.25, 1);
+  --t-tech: #0A84FF;
+  --t-markets: #30D158;
+  --t-discoveries: #BF5AF2;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f5f5f7; --card: #ffffff; --tile: #f2f2f7;
+    --text: #1d1d1f; --text-2: #6e6e73; --text-3: #aeaeb2; --accent: #0071e3;
+  }
+}
+
+* { box-sizing: border-box; }
+html { font-size: clamp(14px, calc(6px + 0.55vw), 18px); }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, a:focus-visible, .deck:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, p { margin: 0; }
+
+/* ---------- Page grid ---------- */
+.app {
+  height: 100dvh; overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 19rem);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: "main rail" "dock dock";
+  gap: 1rem 1.25rem;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1.5rem max(0.9rem, env(safe-area-inset-bottom));
+  max-width: 120rem; margin-inline: auto;
+}
+.flow { grid-area: main; min-height: 0; display: flex; flex-direction: column; gap: 1rem; }
+
+.hello { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.hello h1 { font-size: clamp(1.75rem, 2.6vw, 2.5rem); font-weight: 700; letter-spacing: -0.025em; }
+.hello p { color: var(--text-2); font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
+
+/* ---------- Needs attention: a row of cards, highest priority first ---------- */
+.attention { display: flex; gap: 0.6rem; overflow-x: auto; scrollbar-width: none; flex: none; }
+.att {
+  flex: 0 0 min(22rem, 85%); min-width: 0;
+  display: flex; flex-direction: column; gap: 0.3rem;
+  background: var(--card); border-radius: 16px; padding: 0.75rem 0.95rem;
+  box-shadow: inset 0 3px 0 var(--c, var(--warn));
+}
+.attention.single .att { flex-basis: 100%; }
+.att.urgent { --c: var(--bad); background: color-mix(in srgb, var(--bad) 16%, var(--card)); }
+.att.urgent.acked { background: color-mix(in srgb, var(--bad) 9%, var(--card)); }
+.att.normal { --c: var(--warn); }
+.att.resolved { --c: var(--text-3); opacity: 0.6; }
+.att header { display: flex; align-items: center; gap: 0.5rem; }
+.att .lvl { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c); }
+.att .when { color: var(--text-3); font-size: 0.75rem; margin-left: auto; white-space: nowrap; }
+.att b { font-weight: 600; font-size: 0.975rem; }
+.att p { color: var(--text-2); font-size: 0.85rem; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.att a { color: var(--accent); font-size: 0.8125rem; text-decoration: none; margin-top: auto; }
+.att button.x { color: var(--text-3); font-size: 0.9rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; flex: none; }
+.att button.x:hover { background: var(--tile); color: var(--text); }
+.quiet { color: var(--text-2); font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; }
+.dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ok); flex: none; }
+
+/* ---------- News carousel ---------- */
+.news { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+.section-head { display: flex; align-items: center; gap: 1rem; }
+.segmented { display: inline-flex; background: var(--card); border-radius: 10px; padding: 2px; }
+.segmented button { padding: 0.28rem 0.8rem; border-radius: 8px; font-size: 0.8125rem; font-weight: 500; color: var(--text-2); }
+.segmented button[aria-selected="true"] { background: var(--tile); color: var(--text); }
+.pager { margin-left: auto; display: flex; align-items: center; gap: 0.6rem; color: var(--text-2); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.round { width: 2rem; height: 2rem; border-radius: 50%; background: var(--card); font-size: 1.2rem; line-height: 1; color: var(--text); }
+.round:disabled { opacity: 0.3; cursor: default; }
+.round:not(:disabled):active { transform: scale(0.92); }
+
+.deck { flex: 1; min-height: 0; overflow: hidden; border-radius: var(--radius); touch-action: pan-y; }
+.track { display: flex; gap: 1rem; height: 100%; transition: transform 420ms var(--ease); will-change: transform; }
+.story {
+  flex: 0 0 calc((100% - 1rem) / var(--visible, 2));
+  background: var(--card); border-radius: var(--radius);
+  padding: 1.25rem 1.4rem; display: flex; flex-direction: column; gap: 0.6rem; min-height: 0;
+  container-type: size;   /* text scales with the card, so tall screens don't show empty cards */
+}
+.story .tag { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tc, var(--accent)); }
+.story h3 { margin: 0; font-size: clamp(1.15rem, min(6.5cqh, 4.2cqw), 2.4rem); line-height: 1.18; letter-spacing: -0.02em; font-weight: 650; }
+.story p { color: var(--text-2); line-height: 1.5; font-size: clamp(0.95rem, min(3.6cqh, 2.6cqw), 1.35rem); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 9; }
+.story footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; color: var(--text-3); font-size: 0.8125rem; }
+.story footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.story.tech { --tc: var(--t-tech); } .story.markets { --tc: var(--t-markets); } .story.discoveries { --tc: var(--t-discoveries); }
+.empty { color: var(--text-3); display: grid; place-items: center; height: 100%; background: var(--card); border-radius: var(--radius); flex: 1 0 100%; }
+
+/* ---------- Arrivals ---------- */
+.arrivals { display: flex; flex-direction: column; gap: 0.6rem; }
+.eps { display: flex; gap: 0.6rem; overflow-x: auto; scrollbar-width: none; }
+.ep { flex: 0 0 auto; min-width: 12rem; max-width: 18rem; background: var(--card); border-radius: 14px; padding: 0.6rem 0.85rem; }
+.ep b { display: block; font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ep span { color: var(--text-2); font-size: 0.8125rem; }
+.bar { height: 4px; border-radius: 2px; background: var(--tile); margin-top: 0.45rem; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.ep.stalled .bar i { background: var(--warn); }
+.ep.none { color: var(--text-3); font-size: 0.875rem; }
+
+/* ---------- Rail: compact Mission Control ---------- */
+.rail { grid-area: rail; min-height: 0; display: flex; flex-direction: column; gap: 0.6rem; overflow-y: auto; scrollbar-width: none; }
+.rail h2 { margin-top: 0.15rem; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.tile { background: var(--card); border-radius: 14px; padding: 0.7rem 0.85rem; text-decoration: none; color: inherit; display: block; }
+.tile .k { display: block; font-size: 0.75rem; color: var(--text-2); }
+.tile .v { display: block; font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em; margin-top: 0.1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tile .s { display: block; font-size: 0.75rem; color: var(--text-2); margin-top: 0.05rem; }
+.to-mc { margin-top: auto; text-align: right; color: var(--accent); font-size: 0.875rem; text-decoration: none; padding: 0.3rem 0.2rem; }
+@media (hover: hover) { a.tile:hover { background: var(--tile); } }
+
+/* ---------- Dock (glass navigation layer, same as Mission Control) ---------- */
+.dock {
+  grid-area: dock; justify-self: center;
+  display: flex; gap: 0.35rem; padding: 0.45rem 0.6rem; border-radius: 22px;
+  background: rgba(44, 44, 46, 0.6);
+  backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 40px rgba(0, 0, 0, 0.5);
+  max-width: 100%; overflow-x: auto; scrollbar-width: none;
+}
+.dock-app { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; width: 4.1rem; flex: none; color: var(--text-2); text-decoration: none; transition: transform 160ms var(--ease); }
+.dock-icon { width: 2.5rem; height: 2.5rem; border-radius: 11px; background: var(--tile); display: grid; place-items: center; }
+.dock-icon img { width: 1.6rem; height: 1.6rem; }
+.dock-icon.mono::before { content: ""; width: 1.45rem; height: 1.45rem; background: var(--text); -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+.dock-label { font-size: 0.6875rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-app:active { transform: scale(0.92); }
+@media (hover: hover) { .dock-app:hover { transform: translateY(-3px); color: var(--text); } }
+@media (prefers-color-scheme: light) {
+  .dock { background: rgba(255, 255, 255, 0.62); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 12px 40px rgba(0, 0, 0, 0.14); }
+}
+
+/* ---------- Urgent takeover ---------- */
+.takeover {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(48, 6, 6, 0.94);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.9rem;
+  padding: 2rem; text-align: center; color: #fff;
+  animation: take-in 320ms var(--ease);
+}
+.takeover[hidden] { display: none; }
+.t-icon { width: 4.5rem; height: 4.5rem; border-radius: 50%; background: var(--bad); display: grid; place-items: center; font-size: 2.4rem; font-weight: 800; box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.6); animation: pulse 1.6s infinite; }
+.takeover h2 { font-size: clamp(1.8rem, 3vw, 2.6rem); letter-spacing: -0.02em; }
+.takeover p { max-width: 38rem; line-height: 1.5; color: #ffd7d3; font-size: 1.05rem; }
+.t-note { font-size: 0.9rem !important; color: #ffb3ad !important; }
+.t-actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
+.t-actions a, .t-actions button { padding: 0.7rem 1.4rem; border-radius: 999px; font-weight: 600; text-decoration: none; font-size: 1rem; }
+.t-ack { background: #fff; color: #000; }
+.t-open { background: rgba(255, 255, 255, 0.15); color: #fff; }
+@keyframes take-in { from { opacity: 0; transform: scale(1.03); } }
+@keyframes pulse { 70% { box-shadow: 0 0 0 1.4rem rgba(255, 69, 58, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0); } }
+
+/* ---------- Phone: one column, scrolls ---------- */
+@media (max-width: 700px) {
+  .app { height: auto; overflow: visible; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto;
+         grid-template-areas: "main" "rail" "dock"; padding-inline: 1rem; padding-bottom: 6.5rem; }
+  .news { flex: none; }
+  .deck { height: 22rem; flex: none; }
+  .section-head { flex-wrap: wrap; }
+  .hello { flex-direction: column; gap: 0.2rem; }
+  .dock { position: fixed; z-index: 25; left: 0.75rem; right: 0.75rem; bottom: max(0.75rem, env(safe-area-inset-bottom)); justify-self: stretch; }
+  .to-mc { margin-top: 0; }
+}
+
+/* ---------- Preferences ---------- */
+.static *, .static *::before, .static *::after { transition: none !important; animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 1ms !important; animation: none !important; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .dock { background: var(--card); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .takeover { background: #300606; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  :root { --text-2: #c7c7cc; }
+  .story, .tile, .att, .ep { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3); }
+}

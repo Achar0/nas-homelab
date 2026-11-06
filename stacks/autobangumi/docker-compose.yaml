@@ -1,0 +1,16 @@
+services:
+  autobangumi:
+    image: ghcr.io/estrellaxd/auto_bangumi:latest
+    container_name: autobangumi
+    restart: unless-stopped
+    network_mode: bridge
+    ports:
+      - "7892:7892"
+    environment:
+      TZ: Europe/Rome
+      PUID: "1000"
+      PGID: "10"
+      UMASK: "022"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data

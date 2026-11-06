@@ -1,0 +1,13 @@
+[
+  {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml", "topic": "tech", "lang": "en"},
+  {"name": "TechCrunch", "url": "https://techcrunch.com/feed/", "topic": "tech", "lang": "en"},
+  {"name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "topic": "tech", "lang": "en"},
+  {"name": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/", "topic": "tech", "lang": "en"},
+  {"name": "Wired Italia", "url": "https://www.wired.it/feed/rss", "topic": "tech", "lang": "it"},
+  {"name": "DDay.it", "url": "https://www.dday.it/rss", "topic": "tech", "lang": "it"},
+  {"name": "Il Sole 24 Ore", "url": "https://www.ilsole24ore.com/rss/tecnologia.xml", "topic": "tech", "lang": "it"},
+  {"name": "CNBC Markets", "url": "https://www.cnbc.com/id/15839069/device/rss/rss.html", "topic": "markets", "lang": "en"},
+  {"name": "CNBC Technology", "url": "https://www.cnbc.com/id/19854910/device/rss/rss.html", "topic": "markets", "lang": "en"},
+  {"name": "Il Sole 24 Ore Finanza", "url": "https://www.ilsole24ore.com/rss/finanza.xml", "topic": "markets", "lang": "it"},
+  {"name": "ScienceDaily", "url": "https://www.sciencedaily.com/rss/top/technology.xml", "topic": "discoveries", "lang": "en"}
+]
