@@ -1,0 +1,75 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mockup: noscroll</title><style>body{background:#111;color:#eee;font:14px system-ui,sans-serif;padding:24px}h2{margin:0 0 4px}.subtitle{color:#999;margin:0 0 16px}.cards{display:grid;gap:24px}.card-body p{color:#aaa}</style>
+<style>
+  .scr{background:#000;border-radius:16px;padding:18px;color:#f5f5f7;font:12px -apple-system,system-ui,sans-serif;max-width:1000px;margin:0 auto 18px;aspect-ratio:16/9;display:grid;grid-template-columns:1fr 260px;gap:16px;overflow:hidden;position:relative;box-sizing:border-box}
+  .left{display:grid;grid-template-rows:auto 1fr auto auto;gap:10px;min-height:0}
+  .k{font-size:11px;color:#8e8e93}.big{font-size:30px;font-weight:600;letter-spacing:-.02em}
+  .seg{display:inline-flex;background:#1c1c1e;border-radius:9px;padding:2px;font-size:11px;float:right}
+  .seg span{padding:3px 10px;border-radius:7px;color:#8e8e93}.seg span.on{background:#3a3a3c;color:#fff}
+  svg{display:block;width:100%;height:100%}
+  .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .mt{background:#1c1c1e;border-radius:10px;padding:8px 10px}.mt.on{background:#2c2c2e;outline:1px solid #0A84FF}
+  .mt .v{font-size:15px;font-weight:600}.mt svg{height:16px;margin-top:4px}
+  .disks{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .dk{background:#1c1c1e;border-radius:10px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center}
+  .ok{color:#30D158;font-size:10px}
+  .rail{display:flex;flex-direction:column;gap:8px;min-height:0}
+  .card{background:#1c1c1e;border-radius:12px;padding:9px 12px}
+  .card .t{display:flex;justify-content:space-between;font-size:11px;color:#8e8e93}
+  .card .v{font-size:18px;font-weight:600}.card .s{font-size:10px;color:#8e8e93}
+  .globe{flex:1;min-height:0;background:radial-gradient(circle at 50% 55%,#0a2a4a 0,#06121f 45%,#1c1c1e 46%);border-radius:12px;position:relative;padding:9px 12px}
+  .globe .t{display:flex;justify-content:space-between;font-size:11px;color:#8e8e93}
+  .exp{font-size:10px;color:#0A84FF}
+  .over{position:absolute;left:18px;top:18px;bottom:18px;right:294px;border-radius:14px;background:radial-gradient(circle at 50% 50%,#0d3a66 0,#061629 38%,#0b0b0c 39%);box-shadow:0 20px 60px #000c;display:flex;flex-direction:column;padding:14px}
+  .over .t{display:flex;justify-content:space-between;font-size:13px;font-weight:600}
+  .lab{font-size:13px;font-weight:600;margin:0 0 6px;color:#ebebf5}
+</style>
+<h2>No scroll: everything fits one desktop screen</h2>
+<p class="subtitle">Screen 1 is the normal state. Screen 2 is after you click the Connections card: the globe grows over the left side, the service cards stay visible, click ✕ (or Esc) to send it back.</p>
+
+<div class="lab">1 · Normal</div>
+<div class="scr">
+  <div class="left">
+    <div><div class="seg"><span>1H</span><span class="on">24H</span><span>1W</span><span>1M</span><span>1Y</span></div>
+      <div class="k">Processor · last 24 h</div><div class="big">12%</div><div class="k">avg 9% · peak 63% at 03:12</div></div>
+    <svg viewBox="0 0 400 100" preserveAspectRatio="none">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0A84FF" stop-opacity=".4"/><stop offset="1" stop-color="#0A84FF" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0,80 L25,78 L50,82 L75,25 L100,76 L125,72 L150,77 L175,66 L200,73 L225,52 L250,70 L275,62 L300,75 L325,42 L350,68 L375,72 L400,66 L400,100 L0,100Z" fill="url(#g)"/>
+      <polyline fill="none" stroke="#0A84FF" stroke-width="2" vector-effect="non-scaling-stroke" points="0,80 25,78 50,82 75,25 100,76 125,72 150,77 175,66 200,73 225,52 250,70 275,62 300,75 325,42 350,68 375,72 400,66"/>
+    </svg>
+    <div class="metrics">
+      <div class="mt on"><div class="k">Processor</div><div class="v">12%</div><svg viewBox="0 0 90 18" preserveAspectRatio="none"><polyline fill="none" stroke="#0A84FF" stroke-width="1.4" points="0,14 15,13 22,4 30,13 45,11 60,12 70,8 90,11"/></svg></div>
+      <div class="mt"><div class="k">Memory</div><div class="v">41%</div><svg viewBox="0 0 90 18" preserveAspectRatio="none"><polyline fill="none" stroke="#BF5AF2" stroke-width="1.4" points="0,11 30,10 60,10 90,9"/></svg></div>
+      <div class="mt"><div class="k">Temps</div><div class="v">47°C</div><svg viewBox="0 0 90 18" preserveAspectRatio="none"><polyline fill="none" stroke="#FF9F0A" stroke-width="1.4" points="0,12 20,11 40,8 60,7 90,12"/></svg></div>
+      <div class="mt"><div class="k">Disk I/O</div><div class="v">22 MB/s</div><svg viewBox="0 0 90 18" preserveAspectRatio="none"><polyline fill="none" stroke="#64D2FF" stroke-width="1.4" points="0,15 15,14 20,3 30,14 50,13 65,6 90,13"/></svg></div>
+      <div class="mt"><div class="k">Network</div><div class="v">4.2 MB/s</div><svg viewBox="0 0 90 18" preserveAspectRatio="none"><polyline fill="none" stroke="#30D158" stroke-width="1.4" points="0,12 15,6 30,13 45,5 60,12 75,7 90,10"/></svg></div>
+    </div>
+    <div class="disks">
+      <div class="dk"><span>RAID 5</span><span class="ok">● Healthy</span></div>
+      <div class="dk"><span>Disk 1 · 36°</span><span class="ok">●</span></div>
+      <div class="dk"><span>Disk 2 · 37°</span><span class="ok">●</span></div>
+      <div class="dk"><span>Disk 3 · 35°</span><span class="ok">●</span></div>
+      <div class="dk"><span>NVMe · 44°</span><span class="ok">●</span></div>
+    </div>
+  </div>
+  <div class="rail">
+    <div class="card"><div class="t"><span>qBittorrent</span></div><div class="v">1.8 MB/s</div><div class="s">upload · 14 seeding</div></div>
+    <div class="card"><div class="t"><span>AdGuard</span></div><div class="v">14%</div><div class="s">blocked · 21k queries</div></div>
+    <div class="card"><div class="t"><span>Speedtest</span></div><div class="v">912 Mb/s</div><div class="s">last download</div></div>
+    <div class="card"><div class="t"><span>Tailscale</span></div><div class="v">3</div><div class="s">devices online</div></div>
+    <div class="globe"><div class="t"><span>Connections · 16 live</span><span class="exp">⤢</span></div></div>
+  </div>
+</div>
+
+<div class="lab">2 · Connections expanded</div>
+<div class="scr">
+  <div class="left" style="opacity:.25"><div><div class="k">Processor · last 24 h</div><div class="big">12%</div></div></div>
+  <div class="rail">
+    <div class="card"><div class="t"><span>qBittorrent</span></div><div class="v">1.8 MB/s</div></div>
+    <div class="card"><div class="t"><span>AdGuard</span></div><div class="v">14%</div></div>
+    <div class="card"><div class="t"><span>Speedtest</span></div><div class="v">912 Mb/s</div></div>
+    <div class="card"><div class="t"><span>Tailscale</span></div><div class="v">3</div></div>
+    <div class="globe" style="outline:1px solid #0A84FF"><div class="t"><span>Connections</span><span class="exp">active</span></div></div>
+  </div>
+  <div class="over"><div class="t"><span>Connections · 16 live · 833 in 24 h · <span style="color:#FF453A">1 flagged</span></span><span style="color:#8e8e93">✕</span></div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;color:#8e8e93">🌍 big interactive 3D globe · drag to spin · arcs to every peer</div></div>
+</div>

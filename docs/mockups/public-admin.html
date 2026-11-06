@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mockup: public-admin</title><style>body{background:#111;color:#eee;font:14px system-ui,sans-serif;padding:24px}h2{margin:0 0 4px}.subtitle{color:#999;margin:0 0 16px}.cards{display:grid;gap:24px}.card-body p{color:#aaa}</style>
+<style>
+  .scr{background:#000;border-radius:16px;padding:16px 18px;color:#f5f5f7;font:11px -apple-system,system-ui,sans-serif;aspect-ratio:16/9;display:grid;grid-template-rows:auto auto 1fr auto;gap:12px;overflow:hidden;box-sizing:border-box;max-width:980px;margin:0 auto 10px;position:relative}
+  .hd{display:flex;justify-content:space-between;align-items:center}.hd b{font-size:20px}.hd span{color:#98989d}
+  .adm{padding:5px 12px;border-radius:999px;background:#1c1c1e;color:#0A84FF;font-weight:600}
+  .status{display:flex;gap:10px}
+  .ok{flex:1.4;background:#10261a;border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:center}
+  .ok i{width:10px;height:10px;border-radius:50%;background:#30D158;display:block}.ok b{font-size:15px}.ok span{color:#9fd8b0}
+  .st{flex:1;background:#1c1c1e;border-radius:14px;padding:10px 12px}.st .k{color:#98989d;font-size:10px}.st .v{font-size:18px;font-weight:600}
+  .h{font-size:13px;font-weight:600;display:flex;justify-content:space-between}.h small{font-weight:400;color:#98989d}
+  .deck{display:grid;grid-template-columns:1fr 1fr;gap:10px;min-height:0}
+  .card{background:#1c1c1e;border-radius:14px;padding:12px 14px}.card .t{font-size:9px;font-weight:700;color:#0A84FF;letter-spacing:.05em}
+  .card h4{margin:5px 0;font-size:14px}.card p{margin:0;color:#c7c7cc;line-height:1.4}
+  .eps{display:flex;gap:8px}.ep{background:#1c1c1e;border-radius:11px;padding:7px 10px}.ep b{display:block}.ep span{color:#98989d;font-size:10px}
+  .login{position:absolute;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center}
+  .sheet{width:260px;background:#1c1c1e;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:9px;box-shadow:0 20px 60px #000}
+  .sheet b{font-size:16px}.sheet .in{background:#2c2c2e;border-radius:9px;padding:8px 10px;color:#8e8e93}
+  .sheet .btn{background:#0A84FF;border-radius:9px;padding:8px;text-align:center;font-weight:600}
+  .sheet label{color:#98989d;font-size:10px;display:flex;gap:6px;align-items:center}.sheet label i{width:12px;height:12px;border-radius:3px;background:#0A84FF;display:block}
+  .set{display:grid;grid-template-columns:150px 1fr;gap:14px;min-height:0}
+  .nav div{padding:6px 9px;border-radius:8px;color:#ebebf5cc}.nav div.on{background:#0A84FF;color:#fff}
+  .pane{background:#1c1c1e;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+  .row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #2c2c2e}.row:last-child{border:0}
+  .tog{width:26px;height:15px;border-radius:9px;background:#30D158;position:relative}.tog::after{content:"";position:absolute;right:2px;top:2px;width:11px;height:11px;border-radius:50%;background:#fff}
+  .tog.off{background:#3a3a3c}.tog.off::after{left:2px;right:auto}
+  .lab{font-size:13px;font-weight:600;margin:18px 0 6px;color:#ebebf5}
+</style>
+<h2>Public page for family &amp; guests, admin behind a login</h2>
+<p class="subtitle">1 · what everyone sees at :3001. 2 · tapping Admin. 3 · after login, the admin's Settings (Home and Mission Control are behind the same login). Content is made up.</p>
+
+<div class="lab">1 · Public summary (everyone)</div>
+<div class="scr">
+  <div class="hd"><b>Good evening</b><span>Friday 7 November · 19:30 &nbsp; <span class="adm">Admin</span></span></div>
+  <div class="status">
+    <div class="ok"><i></i><div><b>Everything's running</b><br><span>Internet and storage are fine</span></div></div>
+    <div class="st"><div class="k">Internet</div><div class="v">936 Mb/s</div></div>
+    <div class="st"><div class="k">Free storage</div><div class="v">3.2 TB</div></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px;min-height:0">
+    <div class="h">News <small>All · Tech · Markets · Discoveries &nbsp; ‹ 1–2 / 60 ›</small></div>
+    <div class="deck">
+      <div class="card"><span class="t">TECH · EN</span><h4>New open model tops coding benchmark</h4><p>The release claims state-of-the-art scores while running on a single GPU…</p></div>
+      <div class="card"><span class="t" style="color:#30D158">MARKETS · IT</span><h4>Piazza Affari chiude in rialzo</h4><p>Bene bancari e tecnologici; spread in calo dopo i dati sull'inflazione…</p></div>
+    </div>
+  </div>
+  <div><div class="h" style="margin-bottom:6px">Just arrived</div><div class="eps"><div class="ep"><b>Frieren · S2E05</b><span>2 h ago</span></div><div class="ep"><b>Dandadan · S2E10</b><span>yesterday</span></div></div></div>
+</div>
+
+<div class="lab">2 · Admin login (sheet over the page)</div>
+<div class="scr" style="grid-template-rows:1fr">
+  <div class="login"><div class="sheet"><b>Admin</b><div class="in">Password</div><label><i></i>Remember this device for 30 days</label><div class="btn">Log in</div></div></div>
+</div>
+
+<div class="lab">3 · Admin: Settings (Home / Mission Control / Settings + dock with UGOS)</div>
+<div class="scr" style="grid-template-rows:auto 1fr auto">
+  <div class="hd"><b>Settings</b><span>Home · Mission Control · <span style="color:#fff">Settings</span> · Log out</span></div>
+  <div class="set">
+    <div class="nav"><div class="on">News feeds</div><div>Alert rules</div><div>Services &amp; dock</div><div>Apps</div><div>Account</div></div>
+    <div class="pane">
+      <div class="row"><div class="tog"></div><b>The Verge</b><span style="color:#98989d">Tech · EN</span></div>
+      <div class="row"><div class="tog"></div><b>Il Sole 24 Ore</b><span style="color:#98989d">Tech · IT</span></div>
+      <div class="row"><div class="tog off"></div><b>ANSA Tecnologia</b><span style="color:#98989d">Tech · IT · short summaries</span></div>
+      <div class="row"><span style="color:#0A84FF">+ Add feed (URL, topic, language)</span></div>
+    </div>
+  </div>
+  <div style="justify-self:center;display:flex;gap:6px;padding:6px 9px;border-radius:14px;background:#2c2c2e">🖥 🛡 ⬇ 📺 🐇 💚 🐳 🌍 📈 <b style="color:#fff">UGOS</b></div>
+</div>
