@@ -352,17 +352,7 @@ Root-only tasks:
 
 ## 11. Known issues and next steps
 
-- [ ] **Off-site backup** (e.g. Kopia to Backblaze B2) for the documents and family-photo shares and `/volume1/docker`.
-- [ ] **Wishlist: Telegram status bot.** A small read-only bot on the NAS, reached by long polling so no ports are opened. It answers only the owner's chat ID.
-  - Commands: `/status` (Glances), `/services` (dockerproxy), `/speed` (Speedtest Tracker), `/net` (Netwatch), `/dns` (AdGuard), `/torrents` (qBittorrent).
-  - Optional: a morning summary, and later `/restart <service>` with a confirmation button.
-  - Setup: get a token from @BotFather, store it in `.env`, detect the chat ID.
-- [ ] Optional: AdGuard ad blocking away from home. Set the tailnet DNS to `192.168.1.14` (reachable through the subnet route).
-- [ ] The qBittorrent `/media` mount may be reverted by UGREEN app updates; check after updates.
-- [ ] qBittorrent TZ is `Europe/Amsterdam` (UGREEN default). That's harmless, but `Europe/Rome` would be consistent.
-- [ ] `smbftpd` fails at boot because FTP is disabled. Harmless.
-- [ ] AutoBangumi has no subscriptions configured (0 shows, 0 feeds); Home's planned "episode not downloaded" rule needs them.
-- [ ] Mission Control: check the 3D globe in a real browser after updates (headless captures have no WebGL).
+The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features (public summary page, admin login and Settings, TV idle screen, HTTPS/passkeys), operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
 
 ## 12. Changelog
 

@@ -9,3 +9,6 @@ Read README.md first; it is the source of truth for the setup.
 - Homepage: recreate (not restart) after `.env` changes. Check designs with `scripts/shoot.sh` at 1920×1080, 1800×1125 and 400 px; the user wants calm Apple-HIG style (no nested boxes, one key number per card).
 - Ask before anything destructive or hard to undo on the NAS (deleting media, changing UGOS system config, router changes).
 - Update README.md (services table, known issues, changelog) with every change.
+- **This repo is public.** Never commit personal data: no `.env`, ntfy topic, Tailscale IP/tailnet name, MAC addresses, usernames, share names, torrent/show names, or real API responses with personal content (scrub fixtures). Secrets and personal hosts go in `.env` on the NAS. Commit as `Achar0 <98092805+Achar0@users.noreply.github.com>`.
+- A private backup with the full pre-publication history is `Achar0/nas-homelab-private` (git remote `private`, branch `private-main`); don't push new work there.
+- The to-do list is GitHub Issues, not the README.
