@@ -54,11 +54,12 @@ def _rank(cid):
 
 
 def _source_unreadable(inputs):
-    prom = inputs.get("prom")
-    if any(inputs.get(k) is None for k in REQUIRED_SOURCES):
+    if any(inputs.get(k) is None for k in REQUIRED_SOURCES) or not inputs["kuma"]:
         return True
-    # Prometheus can answer while its exporters are down: empty readings are not good news
-    return prom.get("free_ratio") is None or prom.get("md_active") is None
+    # Prometheus can answer while an exporter is down: empty readings are not good news
+    prom = inputs["prom"]
+    return (any(prom.get(k) is None for k in ("free_ratio", "md_active", "speed_last"))
+            or not prom.get("smart_status") or not prom.get("drive_temp"))
 
 
 def status(inputs, now, updated):

@@ -100,7 +100,7 @@ class GuestRoutes(Base):
         server.LATEST["inputs"] = {
             "kuma": {"AdGuard": 1}, "restarts": {},
             "netwatch": {"items": [{"ip": "203.0.113.7", "flag": ["bad"], "scope": "internet", "dir": "in", "live": True, "last": now}]},
-            "prom": {"md_active": 2, "md_required": 2, "free_ratio": 0.5, "free_bytes": 3.2e12, "speed_last": 9e8, "speed_median": 9e8}}
+            "prom": {"md_active": 2, "md_required": 2, "smart_status": {"sda": 1}, "drive_temp": {"sda": 35}, "free_ratio": 0.5, "free_bytes": 3.2e12, "speed_last": 9e8, "speed_median": 9e8}}
         server.LATEST["inputs_at"] = now
         server.LATEST["arrivals"] = {"arrived": [{"show": "Some.Movie.2024", "ep": "", "at": now, "known": False},
                                                  {"show": "Example Show", "ep": "E05", "at": now, "known": True}],
@@ -126,12 +126,11 @@ class AdminRoutes(Base):
         self.assertEqual((status, headers["Location"]), (302, "/admin/"))
         self.assertEqual(headers["Cache-Control"], "no-store")
 
-    def test_landing_honours_a_safe_next_only(self):
-        good = f"http://{HOST}:8800/x"
-        loc = self.call(f"/?login=1&next={urllib.parse.quote(good, safe='')}", cookie=self.cookie())[1]["Location"]
-        self.assertEqual(loc, good)
-        loc = self.call("/?next=http%3A%2F%2Fevil.example%2F", cookie=self.cookie())[1]["Location"]
-        self.assertEqual(loc, "/admin/")
+    def test_landing_ignores_next_so_ports_cannot_bounce_forever(self):
+        # we only get here with ?login=1 when another port just refused this cookie: sending it back would loop
+        target = urllib.parse.quote(f"http://{HOST}:8800/x", safe="")
+        for query in (f"?login=1&next={target}", f"?next={target}", "?next=http%3A%2F%2Fevil.example%2F"):
+            self.assertEqual(self.call(f"/{query}", cookie=self.cookie())[1]["Location"], "/admin/", query)
 
     def test_bare_admin_gets_its_slash(self):
         status, headers, _ = self.call("/admin", cookie=self.cookie())

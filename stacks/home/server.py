@@ -300,8 +300,8 @@ class Handler(SimpleHTTPRequestHandler):
         path, _, qs = self.path.partition("?")
         q = urllib.parse.parse_qs(qs)
         if path == "/":
-            if self.logged_in():
-                return self.redirect(auth.safe_next((q.get("next") or [None])[0], auth.request_hostname(self)))
+            if self.logged_in():   # never back to ?next: another port just refused this cookie, it would loop
+                return self.redirect(auth.DEFAULT_NEXT)
             return super().do_GET()
         if path == "/api/public/summary":
             data = guest.summary(LATEST["inputs"], LATEST["arrivals"], time.time(), LATEST["inputs_at"])
@@ -416,6 +416,7 @@ def make_server(port):
 
 if __name__ == "__main__":
     load_state()
+    auth.startup_check(log)
     for fn, every in ((attention_tick, 30), (feeds_tick, 900), (arrivals_tick, 60)):
         threading.Thread(target=loop, args=(fn, every), daemon=True).start()
     log("home on port", PORT)

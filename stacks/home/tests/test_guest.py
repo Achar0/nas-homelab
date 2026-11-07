@@ -83,6 +83,13 @@ class Status(unittest.TestCase):
         for over in ({"free_ratio": None}, {"md_active": None}):
             self.assertEqual(status(inputs(prom=prom(**over)))["title"], "Status unavailable", over)
 
+    def test_any_missing_exporter_is_unknown(self):
+        for over in ({"smart_status": {}}, {"drive_temp": {}}, {"speed_last": None}):
+            self.assertEqual(status(inputs(prom=prom(**over)))["title"], "Status unavailable", over)
+
+    def test_kuma_with_no_monitors_is_unknown(self):
+        self.assertEqual(status(inputs(kuma={}))["title"], "Status unavailable")
+
     def test_no_data_yet_is_unknown(self):
         self.assertEqual(guest.status(None, NOW, 0)["title"], "Status unavailable")
 
@@ -129,6 +136,14 @@ class Downloads(unittest.TestCase):
     def test_renamed_path_counts_as_recognised(self):
         d = self.build(torrent("whatever", path="/media/x/Sample Series S01E10.mkv", progress=0.62))
         self.assertEqual(d["downloading"][0]["show"], "Sample Series")
+
+    def test_a_year_is_not_an_episode_number(self):
+        d = self.build(torrent("[GRP] Private Film - 2024 [1080p]"))
+        self.assertEqual((d["arrived"], d["other"]), ([], 1))
+        self.assertNotIn("Private", json.dumps(d))
+
+    def test_long_running_shows_keep_their_name(self):
+        self.assertEqual(self.build(torrent("[G] Example Show - 1120 [1080p].mkv"))["arrived"][0]["ep"], "E1120")
 
     def test_old_finished_unknowns_are_not_counted(self):
         self.assertEqual(self.build(torrent("Some.Movie.2024", completed=NOW - 90 * 86400))["other"], 0)

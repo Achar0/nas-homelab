@@ -110,6 +110,7 @@ def make_server(port):
 
 
 if __name__ == "__main__":
+    auth.startup_check(lambda msg: print(msg, flush=True))
     ensure_vendor()
     print("mission control on port", PORT, flush=True)
     make_server(PORT).serve_forever()

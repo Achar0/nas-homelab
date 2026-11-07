@@ -387,6 +387,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    auth.startup_check(log)
     os.makedirs(DATA, exist_ok=True)
     try:
         state["history"] = json.load(open(os.path.join(DATA, "history.json")))

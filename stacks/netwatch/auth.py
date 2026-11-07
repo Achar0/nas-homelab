@@ -95,6 +95,14 @@ def configured():
     return len(_key()) >= MIN_KEY_LEN and _parse_hash(os.environ.get("ADMIN_PASSWORD_HASH", "")) is not None
 
 
+def startup_check(log):
+    """Say at start-up why every login would be refused; never the values themselves."""
+    if configured():
+        return True
+    log("admin login is off: ADMIN_PASSWORD_HASH or SESSION_SECRET is missing or invalid, everything locked stays locked")
+    return False
+
+
 def _cookie_value(header):
     for part in (header or "").split(";"):
         name, sep, value = part.strip().partition("=")

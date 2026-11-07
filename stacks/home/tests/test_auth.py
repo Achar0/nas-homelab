@@ -88,6 +88,20 @@ class Session(unittest.TestCase):
         self.set_up_env()
         self.assertTrue(auth.configured())
 
+    def test_startup_check_says_why_without_the_values(self):
+        lines = []
+        os.environ["SESSION_SECRET"] = "short-value"
+        self.assertFalse(auth.startup_check(lines.append))
+        self.assertEqual(len(lines), 1)
+        self.assertIn("ADMIN_PASSWORD_HASH", lines[0])
+        self.assertNotIn("short-value", lines[0])
+
+    def test_startup_check_is_quiet_when_all_is_well(self):
+        self.set_up_env()
+        lines = []
+        self.assertTrue(auth.startup_check(lines.append))
+        self.assertEqual(lines, [])
+
     def test_login_cookie_flags(self):
         self.set_up_env()
         remembered = auth.login_cookie(True, 1000)
