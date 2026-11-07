@@ -47,6 +47,9 @@ UA = {"User-Agent": "nas-home/1.0 (personal feed reader)"}
 
 ADMIN_STATIC = os.path.join(STATIC, "admin")
 LOGIN_BODY_LIMIT = 4096
+SETTINGS_BODY_LIMIT = 65536
+FEED_NAME_LIMIT = 80
+FEEDS_WAKE = threading.Event()   # set to refresh the news now instead of at the next 15-minute cycle
 THROTTLE = auth.Throttle()
 login_lock = threading.Lock()   # one password check at a time: scrypt is deliberately expensive
 lock = threading.Lock()
@@ -228,8 +231,7 @@ def attention_tick(gather=gather_inputs):
 
 
 def feeds_tick():
-    with open(os.path.join(HERE, "feeds.json")) as f:
-        cfg = json.load(f)
+    cfg = [f for f in STORE.get()["feeds"] if f["enabled"]]
     items, errors = feeds.fetch_all(cfg, get_limited)
     cutoff = time.time() - 3 * 86400
     LATEST["news"] = feeds.balance(feeds.dedupe([i for i in items if i["published"] > cutoff]))[:60]
@@ -242,6 +244,16 @@ def feeds_tick():
 
 def arrivals_tick():
     LATEST["arrivals"] = arrivals.build(qbt.torrents(), time.time())
+
+
+def feeds_loop():
+    while True:
+        FEEDS_WAKE.clear()   # before fetching: a change made during the fetch runs it again
+        try:
+            feeds_tick()
+        except Exception as e:  # noqa: BLE001 - keep the worker alive
+            log("feeds_tick failed:", e)
+        FEEDS_WAKE.wait(900)
 
 
 def loop(fn, every):
@@ -331,6 +343,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return None
             if self.translate_path(self.path) == ADMIN_STATIC and not path.endswith("/"):
                 return self.redirect("/admin/")
+        if path == "/api/settings":
+            view = STORE.get()
+            del view["known_containers"]
+            return self.json({**view, "problem": STORE.problem})
         if path == "/api/attention":
             data = {**LATEST["attention"], "push": alert_rules()["push"]}
             if q.get("demo") == ["urgent"]:   # preview the takeover; never stored, never pushed
@@ -355,19 +371,30 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(404)
         return super().do_GET()
 
-    def login(self):
+    def read_json(self, limit):
+        """The request's JSON object, or None after answering 413 or 400."""
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = -1
-        if length > LOGIN_BODY_LIMIT:
+        if length > limit:
             self.close_connection = True   # the body stays unread
-            return self.json({"error": "too big"}, 413)
+            self.json({"error": "too big"}, 413)
+            return None
         try:
             body = json.loads(self.rfile.read(length)) if length > 0 else None
         except ValueError:
             body = None
-        if not isinstance(body, dict) or not isinstance(body.get("pw"), str):
+        if not isinstance(body, dict):
+            self.json({"error": "bad request"}, 400)
+            return None
+        return body
+
+    def login(self):
+        body = self.read_json(LOGIN_BODY_LIMIT)
+        if body is None:
+            return None
+        if not isinstance(body.get("pw"), str):
             return self.json({"error": "bad request"}, 400)
         if not auth.configured():
             log("login refused:", auth.auth_file(), "is missing or invalid")
@@ -384,6 +411,70 @@ class Handler(SimpleHTTPRequestHandler):
         target = auth.safe_next(body.get("next"), auth.request_hostname(self))
         return self.json({"ok": True, "next": target}, cookie=auth.login_cookie(bool(body.get("remember")), now))
 
+    def save(self, fn, wake=False):
+        """Apply one settings change and answer: 200, 400 if refused, 503 if it couldn't be written."""
+        try:
+            STORE.update(fn)
+        except ValueError as e:
+            return self.json({"error": f"Can't save that: {e}."}, 400)
+        except OSError as e:
+            log("settings not saved:", e)
+            return self.json({"error": "Couldn't save the settings on the NAS."}, 503)
+        if wake:
+            FEEDS_WAKE.set()
+        return self.json({"ok": True})
+
+    def settings_post(self, parts):
+        body = self.read_json(SETTINGS_BODY_LIMIT)
+        if body is None:
+            return None
+        if parts == ["feeds"]:
+            return self.add_feed(body)
+        if parts[:1] == ["feeds"] and len(parts) in (2, 3):
+            return self.change_feed(parts[1], parts[2:], body)
+        return self.send_error(404)
+
+    def add_feed(self, body):
+        url, topic, lang = body.get("url"), body.get("topic"), body.get("lang")
+        if not isinstance(url, str) or urllib.parse.urlsplit(url.strip()).scheme not in ("http", "https"):
+            return self.json({"error": "Enter an address starting with http:// or https://."}, 400)
+        url = url.strip()
+        if topic not in settings.TOPICS or lang not in settings.LANGS:
+            return self.json({"error": "Choose a topic and a language."}, 400)
+        if any(f["url"] == url for f in STORE.get()["feeds"]):
+            return self.json({"error": "That feed is already on the list."}, 400)
+        try:
+            data = get_limited(url)
+        except (OSError, ValueError):
+            return self.json({"error": "Couldn't read that address."}, 400)
+        try:
+            title = feeds.check(data)
+        except ValueError:
+            return self.json({"error": "That address isn't an RSS or Atom feed."}, 400)
+        name = title or (urllib.parse.urlsplit(url).hostname or url).removeprefix("www.")
+        new = {"id": settings.feed_id(url), "name": name[:FEED_NAME_LIMIT], "url": url, "topic": topic, "lang": lang, "enabled": True}
+
+        def add(s):
+            if any(f["url"] == url for f in s["feeds"]):   # checked again: the fetch ran outside the lock
+                return False
+            s["feeds"].append(new)
+            return None
+        return self.save(add, wake=True)
+
+    def change_feed(self, fid, action, body):
+        if not any(f["id"] == fid for f in STORE.get()["feeds"]):
+            return self.send_error(404)
+        if action == ["remove"]:
+            return self.save(lambda s: s.update(feeds=[f for f in s["feeds"] if f["id"] != fid]), wake=True)
+        if action or not isinstance(body.get("enabled"), bool):
+            return self.json({"error": "bad request"}, 400)
+
+        def switch(s):
+            for f in s["feeds"]:
+                if f["id"] == fid:
+                    f["enabled"] = body["enabled"]
+        return self.save(switch, wake=True)
+
     def do_POST(self):
         path = self.path.split("?")[0]
         if path == "/api/login":
@@ -393,6 +484,8 @@ class Handler(SimpleHTTPRequestHandler):
         if not auth.require_login(self):
             return None
         parts = path.strip("/").split("/")
+        if parts[:2] == ["api", "settings"]:
+            return self.settings_post([urllib.parse.unquote(x) for x in parts[2:]])
         if len(parts) == 4 and parts[:2] == ["api", "news"] and parts[3] == "open":
             ok = news_db.mark_opened(NEWS_DB, urllib.parse.unquote(parts[2]), time.time())
             return self.json({"ok": True}) if ok else self.send_error(404)
@@ -428,7 +521,8 @@ def make_server(port):
 if __name__ == "__main__":
     load_state()
     auth.startup_check(log)
-    for fn, every in ((attention_tick, 30), (feeds_tick, 900), (arrivals_tick, 60)):
+    for fn, every in ((attention_tick, 30), (arrivals_tick, 60)):
         threading.Thread(target=loop, args=(fn, every), daemon=True).start()
+    threading.Thread(target=feeds_loop, daemon=True).start()
     log("home on port", PORT)
     make_server(PORT).serve_forever()

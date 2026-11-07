@@ -96,6 +96,20 @@ def parse(data, source, topic, lang):
     return items
 
 
+def check(data):
+    """The cleaned title of an RSS or Atom feed ("" if it has none). Raises ValueError if it isn't one."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        raise ValueError("not a feed") from None
+    if root.tag == ATOM + "feed":
+        return clean(_text(root, ATOM + "title"))
+    channel = root.find("channel")
+    if channel is None:
+        raise ValueError("not RSS or Atom")
+    return clean(_text(channel, "title"))
+
+
 def _words(title):
     return set(re.sub(r"[^\w\s]", " ", title.lower()).split())
 
