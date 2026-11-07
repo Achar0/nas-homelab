@@ -1,4 +1,7 @@
-"""Just arrived / downloading, from qBittorrent's torrent list (pure)."""
+"""Just arrived / downloading, from qBittorrent's torrent list (pure).
+
+`known` means the name matched a show/episode pattern: only those are named on the guest page.
+"""
 import os
 import re
 
@@ -36,10 +39,10 @@ def build(torrents, now):
         show, ep = show_episode(t["name"], t.get("content_path", ""))
         if t["progress"] >= 1:
             if t.get("completion_on", 0) > now - WINDOW:
-                arrived.append({"show": show, "ep": ep, "at": t["completion_on"]})
+                arrived.append({"show": show, "ep": ep, "at": t["completion_on"], "known": bool(ep)})
         else:
             stalled = t["state"] in STALLED
             downloading.append({"show": show, "ep": ep, "progress": round(t["progress"], 3),
-                                "eta": None if stalled or t.get("eta", 0) >= 8640000 else t["eta"], "stalled": stalled})
+                                "eta": None if stalled or t.get("eta", 0) >= 8640000 else t["eta"], "stalled": stalled, "known": bool(ep)})
     arrived.sort(key=lambda a: -a["at"])
     return {"arrived": arrived[:12], "downloading": downloading}

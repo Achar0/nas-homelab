@@ -85,8 +85,8 @@ RULES = {"netwatch": _netwatch, "kuma": _kuma, "prom": _prom, "restarts": _resta
 SRC_OF_INPUT = {"netwatch": "netwatch", "kuma": "kuma", "prom": "prom", "restarts": "docker", "ab_missing": "ab"}
 
 
-def evaluate(inputs, state, now):
-    incidents = state.setdefault("incidents", {})
+def conditions(inputs, now):
+    """What is wrong right now, whatever has been dismissed: ({id: condition}, sources that answered)."""
     active, known_srcs = {}, set()
     for key, rule in RULES.items():
         data = inputs.get(key)
@@ -95,6 +95,12 @@ def evaluate(inputs, state, now):
         known_srcs.add(SRC_OF_INPUT[key])
         for c in rule(data, now) if key == "netwatch" else rule(data):
             active[c["id"]] = c
+    return active, known_srcs
+
+
+def evaluate(inputs, state, now):
+    incidents = state.setdefault("incidents", {})
+    active, known_srcs = conditions(inputs, now)
 
     pushes = []
     last_push = state.setdefault("last_push", {})

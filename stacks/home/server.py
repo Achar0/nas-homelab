@@ -41,7 +41,7 @@ UA = {"User-Agent": "nas-home/1.0 (personal feed reader)"}
 lock = threading.Lock()
 STATE = {}
 LATEST = {"attention": {"items": [], "urgent": None, "sources_down": []}, "news": [], "news_errors": [],
-          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}}
+          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0}
 
 
 def log(*a):
@@ -113,6 +113,7 @@ def read_prom():
         "smart_status": prom_by("smartctl_device_smart_status", "device"),
         "drive_temp": prom_by('smartctl_device_temperature{temperature_type="current"}', "device"),
         "free_ratio": prom_one('node_filesystem_avail_bytes{mountpoint="/volume1"} / node_filesystem_size_bytes{mountpoint="/volume1"}'),
+        "free_bytes": prom_one('node_filesystem_avail_bytes{mountpoint="/volume1"}'),
         "speed_last": prom_one("mc_speedtest_download_bits_per_second"),
         "speed_median": prom_one("quantile_over_time(0.5, mc_speedtest_download_bits_per_second[30d])"),
     }
@@ -197,6 +198,7 @@ def attention_tick(gather=gather_inputs):
     with lock:
         items, urgent, pushes = attention.evaluate(inputs, STATE, now)
         LATEST["attention"] = {"items": items, "urgent": urgent, "sources_down": down}
+        LATEST["inputs"], LATEST["inputs_at"] = inputs, now   # raw readings for the guest status line
         try:
             save_state()
         except OSError as e:   # e.g. disk full: keep showing and pushing, just log it
