@@ -199,3 +199,57 @@ class ChangeFeed(Base):
         self.assertEqual(code, 503)
         self.assertNotIn("disk full", json.dumps(data))
         self.assertTrue(server.STORE.get()["feeds"][0]["enabled"])
+
+
+class Scan(Base):
+    def gather(self, containers):
+        return lambda now: ({"containers": containers}, [])
+
+    def test_tick_records_a_new_container(self):
+        c = {"Names": ["/thing-9000"], "State": "running", "Ports": []}
+        server.attention_tick(self.gather([]))
+        server.attention_tick(self.gather([c]))
+        self.assertEqual(server.STORE.get()["services"][-1]["container"], "thing-9000")
+
+    def test_tick_with_docker_unreadable_changes_nothing(self):
+        server.attention_tick(self.gather([]))
+        before = server.STORE.get()
+        server.attention_tick(self.gather(None))
+        self.assertEqual(server.STORE.get(), before)
+
+    def test_write_failure_does_not_stop_the_tick(self):
+        real = settings.os.replace
+        settings.os.replace = lambda *a: (_ for _ in ()).throw(OSError("disk full"))
+        self.addCleanup(setattr, settings.os, "replace", real)
+        real_save = server.save_state
+        server.save_state = lambda: None
+        self.addCleanup(setattr, server, "save_state", real_save)
+        server.attention_tick(self.gather([]))   # must not raise
+
+    def test_gather_passes_the_same_listing_to_restarts(self):
+        listing = [{"Id": "abc", "Names": ["/thing"], "State": "running"}]
+        real_get = server.get
+        self.addCleanup(setattr, server, "get", real_get)
+
+        def fake(url, *a, **kw):
+            if url.endswith("/containers/json?all=1"):
+                return json.dumps(listing).encode()
+            if url.endswith("/containers/abc/json"):
+                return b'{"RestartCount": 0}'
+            raise OSError("not available")
+        server.get = fake
+        inputs, _ = server.gather_inputs(1000)
+        self.assertEqual(inputs["containers"], listing)
+        self.assertEqual(inputs["restarts"], {"thing": 0})
+
+    def test_gather_with_docker_down(self):
+        real_get = server.get
+        self.addCleanup(setattr, server, "get", real_get)
+
+        def fake(*a, **kw):
+            raise OSError("not available")
+        server.get = fake
+        inputs, down = server.gather_inputs(1000)
+        self.assertIsNone(inputs["containers"])
+        self.assertIsNone(inputs["restarts"])
+        self.assertIn("restarts", down)

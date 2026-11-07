@@ -24,6 +24,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import arrivals
 import attention
 import auth
+import discovery
 import feeds
 import guest
 import news_db
@@ -157,9 +158,15 @@ def read_kuma():
 _restart_samples = {}   # container -> [(t, RestartCount)]
 
 
-def read_restarts(now):
+def read_containers():
+    return json.loads(get(DOCKER + "/containers/json?all=1"))
+
+
+def read_restarts(now, containers):
+    if containers is None:
+        raise OSError("docker proxy unavailable")
     out = {}
-    for c in json.loads(get(DOCKER + "/containers/json?all=1")):
+    for c in containers:
         name = c["Names"][0].lstrip("/")
         count = json.loads(get(f"{DOCKER}/containers/{c['Id']}/json")).get("RestartCount", 0)
         hist = [s for s in _restart_samples.get(name, []) if now - s[0] <= 600] + [(now, count)]
@@ -200,9 +207,13 @@ def send_push(title, detail):
 
 # ---------- workers ----------
 def gather_inputs(now):
-    inputs, down = {"ab_missing": None}, []
+    inputs, down = {"ab_missing": None, "containers": None}, []
+    try:
+        inputs["containers"] = read_containers()
+    except Exception as e:  # noqa: BLE001 - same as the sources below
+        log("containers unavailable:", e)
     for key, read in (("netwatch", lambda: json.loads(get(NETWATCH + "/api/state"))), ("kuma", read_kuma),
-                      ("prom", read_prom), ("restarts", lambda: read_restarts(now))):
+                      ("prom", read_prom), ("restarts", lambda: read_restarts(now, inputs["containers"]))):
         try:
             inputs[key] = read()
         except Exception as e:  # noqa: BLE001 - a source being down must not stop the others
@@ -213,9 +224,17 @@ def gather_inputs(now):
     return inputs, down
 
 
+def scan_containers(containers):
+    try:
+        STORE.update(lambda s: discovery.apply(s, containers))
+    except (OSError, ValueError) as e:   # e.g. disk full: alerts matter more, just log it
+        log("settings not saved:", e)
+
+
 def attention_tick(gather=gather_inputs):
     now = time.time()
     inputs, down = gather(now)
+    scan_containers(inputs.get("containers"))
     rules = alert_rules()
     with lock:
         items, urgent, pushes = attention.evaluate(inputs, STATE, now, rules)
