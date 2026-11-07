@@ -17,7 +17,7 @@ SLOW = "Internet is slow right now"
 # Uptime Kuma monitor name (lowercase, matched as a substring; first match wins) -> plain name
 PLAIN_NAMES = (("adguard", "Ad blocking"), ("qbittorrent", "Downloading"), ("autobangumi", "Episode tracking"),
                ("speedtest", "Speed test"), ("mission control", "Monitoring"), ("netwatch", "Monitoring"),
-               ("tailscale", "Remote access"), ("home", "The home page"))
+               ("tailscale", "Remote access"), ("theater", "The media library"), ("home", "The home page"))
 
 
 def _warn(title, detail=""):

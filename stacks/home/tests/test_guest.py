@@ -36,6 +36,10 @@ class Status(unittest.TestCase):
     def test_plain_names_ignore_case(self):
         self.assertEqual(status(inputs(kuma={"adguard home": 0}))["title"], "Ad blocking is down")
 
+    def test_real_monitor_names(self):
+        self.assertEqual(status(inputs(kuma={"Theater": 0}))["title"], "The media library is down")
+        self.assertEqual(status(inputs(kuma={"Homepage": 0}))["title"], "The home page is down")
+
     def test_unmapped_service_stays_anonymous(self):
         s = status(inputs(kuma={"Secret Thing": 0}))
         self.assertEqual(s["title"], "A service is down")
