@@ -127,6 +127,14 @@ class Scan(unittest.TestCase):
         discovery.apply(cfg, [c("x" * 90)])
         settings.normalize(cfg, settings.default_settings([]))
 
+    def test_container_of_an_existing_row_never_gets_a_second_row(self):
+        cfg = scanned()   # home-3001 wasn't there for the first scan, and comes back later
+        before = len(cfg["services"])
+        self.assertTrue(discovery.apply(cfg, [c("home-3001")]))
+        self.assertEqual(len(cfg["services"]), before)
+        self.assertIn("home-3001", cfg["known_containers"])
+        self.assertTrue(row(cfg, "home-3001")["running"])
+
     def test_unnamed_container_skipped(self):
         cfg = scanned()
         self.assertFalse(discovery.apply(cfg, [{"Names": [], "State": "running"}]))

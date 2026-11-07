@@ -416,6 +416,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.json({"error": "prometheus unavailable"}, 502)
         if path.startswith("/api/"):
             return self.send_error(404)
+        if path in ("/admin/settings", "/admin/settings/"):
+            self.path = "/admin/settings.html"
         return super().do_GET()
 
     def read_json(self, limit):

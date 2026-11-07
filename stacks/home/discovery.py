@@ -56,7 +56,8 @@ def apply(cfg, containers):
         name = c["Names"][0].lstrip("/") if c.get("Names") else None
         if name and name not in cfg["known_containers"]:
             cfg["known_containers"].append(name)
-            cfg["services"].append(_new_row(name, c))
+            if not any(s["container"] == name for s in cfg["services"]):
+                cfg["services"].append(_new_row(name, c))
             changed = True
     for s in cfg["services"]:
         if s["container"] and s["running"] != names.get(s["container"], False):

@@ -40,3 +40,23 @@ export const fmtMbps = (v) => (v === null || v === undefined ? "—" : `${Math.r
 
 // Guest page: downloads it doesn't name are only counted
 export const otherLabel = (n) => (n > 0 ? `${n} other download${n === 1 ? "" : "s"}` : "");
+
+// Settings: items in order's sequence; show:false left out, unknown ids ignored, items order doesn't name stay at the end
+export function applyLayout(items, order) {
+  if (!order) return items;
+  const byId = new Map(items.map((x) => [x.id, x]));
+  const out = [];
+  for (const o of order) {
+    if (byId.has(o.id) && o.show !== false) out.push(byId.get(o.id));
+  }
+  const named = new Set(order.map((o) => o.id));
+  return out.concat(items.filter((x) => !named.has(x.id)));
+}
+
+// A new list with one element moved; out-of-range positions change nothing
+export function moveItem(list, from, to) {
+  const out = [...list];
+  if (from < 0 || from >= out.length || to < 0 || to >= out.length) return out;
+  out.splice(to, 0, out.splice(from, 1)[0]);
+  return out;
+}

@@ -217,6 +217,26 @@ class Login(Base):
         self.assertIn("Max-Age=0", headers["Set-Cookie"])
 
 
+class SettingsPage(Base):
+    def test_settings_page_needs_login(self):
+        for path in ("/admin/settings", "/admin/settings/", "/admin/settings.html", "/admin/settings.js", "/admin/settings.css",
+                     "/%61dmin/settings", "/x/../admin/settings.html"):
+            status, headers, data = self.call(path)
+            self.assertEqual(status, 302, path)
+            self.assertIn("/?login=1&next=", headers["Location"], path)
+            self.assertEqual(data, b"", path)
+
+    def test_settings_page_served_when_logged_in(self):
+        for path in ("/admin/settings", "/admin/settings/"):
+            status, _, data = self.call(path, cookie=self.cookie())
+            self.assertEqual(status, 200, path)
+            self.assertIn(b"settings.js", data)
+        self.assertEqual(self.call("/admin/settings.js", cookie=self.cookie())[0], 200)
+
+    def test_admin_page_links_to_settings(self):
+        self.assertIn(b'href="/admin/settings"', self.call("/admin/", cookie=self.cookie())[2])
+
+
 class Account(Base):
     def setUp(self):
         super().setUp()
