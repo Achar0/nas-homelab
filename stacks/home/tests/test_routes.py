@@ -56,6 +56,8 @@ class Base(unittest.TestCase):
     def call(self, path, method="GET", cookie=None, body=None):
         c = http.client.HTTPConnection(HOST, self.port, timeout=10)
         headers = {"Cookie": cookie} if cookie else {}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
         c.request(method, path, body=body, headers=headers)
         r = c.getresponse()
         data = r.read()

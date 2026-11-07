@@ -144,6 +144,74 @@ class BrokenFile(Base):
         self.assertEqual(self.store().get()["alerts"]["hot_c"], 60)
 
 
+class HandEdits(Base):
+    def edit(self, change):
+        with open(self.path) as f:
+            data = json.load(f)
+        change(data)
+        with open(self.path, "w") as f:
+            json.dump(data, f)
+            f.write("\n")   # size changes too, like a real edit
+
+    def test_running_store_sees_a_hand_edit_and_keeps_it(self):
+        st = self.store()
+        st.update(lambda s: s["alerts"].update(hot_c=60))
+        self.edit(lambda d: d["alerts"].update(free_pct=40))
+        self.assertEqual(st.get()["alerts"]["free_pct"], 40)
+        st.update(lambda s: s["alerts"].update(hot_c=61))
+        self.assertEqual(self.store().get()["alerts"]["free_pct"], 40)
+        self.assertEqual(self.store().get()["alerts"]["hot_c"], 61)
+
+    def test_update_works_from_the_edited_value(self):
+        st = self.store()
+        st.update(lambda s: s["alerts"].update(hot_c=60))
+        self.edit(lambda d: d["alerts"].update(free_pct=40))
+        st.update(lambda s: s["alerts"].update(hot_c=61))   # no get() in between
+        self.assertEqual(st.get()["alerts"]["free_pct"], 40)
+
+    def test_bad_hand_edit_on_a_running_store_goes_the_broken_file_path(self):
+        st = self.store()
+        st.update(lambda s: s["alerts"].update(hot_c=60))
+        self.edit(lambda d: d["alerts"].update(hot_c="hot"))
+        self.assertEqual(st.get()["alerts"]["hot_c"], 50)
+        self.assertTrue(st.problem)
+        self.assertEqual(len([f for f in os.listdir(self.dir) if f.startswith("settings.json.bad-")]), 1)
+
+    def test_own_writes_cause_no_reload(self):
+        st = self.store()
+        st.update(lambda s: s["alerts"].update(hot_c=60))
+        load = st._load
+        st._load = lambda: self.fail("reloaded its own write")
+        self.addCleanup(setattr, st, "_load", load)
+        st.get()
+        st.update(lambda s: s["alerts"].update(hot_c=61))
+        st.get()
+
+    def test_deleted_file_keeps_the_current_values(self):
+        st = self.store()
+        st.update(lambda s: s["alerts"].update(hot_c=60))
+        os.remove(self.path)
+        self.assertEqual(st.get()["alerts"]["hot_c"], 60)
+
+
+class BadStartingList(Base):
+    def feeds_file(self, data):
+        with open(self.feeds, "w") as f:
+            json.dump(data, f)
+
+    def test_bad_entries_are_skipped_and_saving_still_works(self):
+        good = FEEDS[0]
+        self.feeds_file([good, {"name": "No address"}, {**good, "url": "https://x.example/a", "topic": "sport"},
+                         {**good, "url": "ftp://x.example/b"}, "text", {**good}])   # the last repeats the first
+        st = self.store()
+        self.assertEqual([f["url"] for f in st.get()["feeds"]], [good["url"]])
+        st.update(lambda s: s["alerts"].update(hot_c=60))
+
+    def test_not_a_list_gives_no_feeds(self):
+        self.feeds_file({"name": "x"})
+        self.assertEqual(self.store().get()["feeds"], [])
+
+
 class Validation(Base):
     def refused(self, fn):
         st = self.store()

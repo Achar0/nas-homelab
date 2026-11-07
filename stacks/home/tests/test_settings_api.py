@@ -164,6 +164,63 @@ class AddFeed(Base):
         self.assertLessEqual(len(server.STORE.get()["feeds"][-1]["name"]), 80)
 
 
+class BadFeedAddresses(Base):
+    def test_malformed_urls_get_a_plain_error(self):
+        for url in ("http://[bad", "http://example.invalid:abc/", "http://example.invalid/a b"):
+            code, data = self.add(url)
+            self.assertEqual(code, 400, url)
+            self.assertIn("error", data)
+        self.assertEqual(len(self.feed_urls()), 1)
+
+    def test_non_http_answer_gets_a_plain_error(self):
+        for err in (http.client.BadStatusLine("NOT HTTP AT ALL"), http.client.InvalidURL("bad"), http.client.IncompleteRead(b"x")):
+            def fail(url, e=err):
+                raise e
+            server.get_limited = fail
+            code, data = self.add()
+            self.assertEqual(code, 400)
+            self.assertEqual(data["error"], "Couldn't read that address.")
+
+
+class CrossSite(Base):
+    """SameSite doesn't separate ports: a page in another app on this NAS would still carry the cookie."""
+
+    def raw(self, path, origin=None, ctype="application/json", body=b'{"push": false}'):
+        c = http.client.HTTPConnection("127.0.0.1", self.port)
+        headers = {"Cookie": f"nas_admin={auth.make_token(KEY, time.time() + 60)}"}
+        if ctype:
+            headers["Content-Type"] = ctype
+        if origin:
+            headers["Origin"] = origin
+        c.request("POST", path, body, headers)
+        r = c.getresponse()
+        r.read()
+        c.close()
+        return r.status
+
+    def test_other_port_refused(self):
+        self.assertEqual(self.raw("/api/settings/alerts", origin="http://127.0.0.1:8888"), 403)
+        self.assertIs(server.STORE.get()["alerts"]["push"], True)
+
+    def test_other_host_and_null_origin_refused(self):
+        for origin in ("http://evil.example", "null"):
+            self.assertEqual(self.raw("/api/settings/alerts", origin=origin), 403, origin)
+
+    def test_every_post_checks_it(self):
+        for path in ("/api/account/logout-everywhere", "/api/logout", "/api/login", "/api/attention/x/ack"):
+            self.assertEqual(self.raw(path, origin="http://127.0.0.1:8888", body=b"{}"), 403, path)
+
+    def test_same_origin_allowed(self):
+        self.assertEqual(self.raw("/api/settings/alerts", origin=f"http://127.0.0.1:{self.port}"), 200)
+        self.assertIs(server.STORE.get()["alerts"]["push"], False)
+
+    def test_form_content_types_refused(self):
+        for ctype in ("text/plain", "application/x-www-form-urlencoded", None):
+            self.assertEqual(self.raw("/api/settings/alerts", ctype=ctype), 415, ctype)
+        self.assertEqual(self.raw("/api/account/logout-everywhere", ctype="text/plain", body=b"{}"), 415)
+        self.assertIs(server.STORE.get()["alerts"]["push"], True)
+
+
 class ChangeFeed(Base):
     def seed_id(self):
         return server.STORE.get()["feeds"][0]["id"]
@@ -225,6 +282,12 @@ class Scan(Base):
         server.save_state = lambda: None
         self.addCleanup(setattr, server, "save_state", real_save)
         server.attention_tick(self.gather([]))   # must not raise
+
+    def test_nonsense_from_docker_does_not_stop_the_alerts(self):
+        for reply in ({"message": "nope"}, [1, 2], "text", [{"Names": "x"}]):
+            server.STATE.clear()
+            server.attention_tick(lambda now: ({"containers": reply, "prom": {"md_active": 1, "md_required": 2}}, []))
+            self.assertEqual(server.LATEST["attention"]["urgent"]["id"], "raid", reply)
 
     def test_gather_passes_the_same_listing_to_restarts(self):
         listing = [{"Id": "abc", "Names": ["/thing"], "State": "running"}]
@@ -305,6 +368,14 @@ class Services(ServicesBase):
         self.assertEqual(self.set(sid, on_dock=True)[0], 400)
         self.assertEqual(self.set(sid, port=9000)[0], 200)
         self.assertEqual(self.set(sid, on_dock=True)[0], 200)
+
+    def test_switched_on_service_can_still_be_corrected(self):
+        sid = self.new_container()
+        self.set(sid, on_dock=True)
+        self.assertEqual(self.set(sid, name="Fixed", port=9001, scheme="https")[0], 200)
+        s = self.service(sid)
+        self.assertEqual((s["name"], s["port"], s["scheme"], s["on_dock"]), ("Fixed", 9001, "https", True))
+        self.assertEqual(self.set(sid, scheme="javascript")[0], 400)
 
     def test_docking_moves_new_to_known(self):
         sid = self.new_container()

@@ -16,3 +16,4 @@ __pycache__/
 admin-auth.env
 !stacks/home/static/icons/ugos.png
 admin-auth/
+auth.json

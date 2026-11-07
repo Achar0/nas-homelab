@@ -114,6 +114,24 @@ class PhoneSwitch(unittest.TestCase):
         self.serve(["not", "an", "object"])
         self.assertIs(app.push_enabled(), True)
 
+    def test_push_enabled_true_when_home_dies_mid_reply(self):
+        class Dies(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", "1000")
+                self.end_headers()
+                self.wfile.write(b'{"push"')
+
+            def log_message(self, *a):
+                pass
+        home = ThreadingHTTPServer(("127.0.0.1", 0), Dies)
+        self.addCleanup(home.server_close)
+        self.addCleanup(home.shutdown)
+        threading.Thread(target=home.serve_forever, daemon=True).start()
+        self.addCleanup(setattr, app, "HOME_URL", app.HOME_URL)
+        app.HOME_URL = f"http://127.0.0.1:{home.server_address[1]}"
+        self.assertIs(app.push_enabled(), True)
+
     def test_send_alerts_sends_nothing_when_off(self):
         self.serve({"push": False})
         sent = []

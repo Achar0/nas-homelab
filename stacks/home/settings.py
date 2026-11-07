@@ -151,14 +151,41 @@ class Store:
         self._lock = threading.Lock()
         self._defaults = default_settings(self._read_feeds(feeds_path))
         self._value = self._load()
+        self._seen = self._stamp()
 
     @staticmethod
     def _read_feeds(path):
+        """The usable entries of the first-run list. A bad entry must not stop Home, or its alerts, from starting."""
         try:
             with open(path) as f:
-                return json.load(f)
+                raw = json.load(f)
         except (OSError, ValueError):
             return []
+        out, seen = [], set()
+        for f in raw if isinstance(raw, list) else []:
+            try:
+                _check_feed({**f, "id": "x", "enabled": True})
+            except (ValueError, TypeError, AttributeError):
+                print(time.strftime("%H:%M:%S"), "feeds.json: skipped a bad entry", flush=True)
+                continue
+            if f["url"] not in seen:
+                seen.add(f["url"])
+                out.append(f)
+        return out
+
+    def _stamp(self):
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            return None
+        return st.st_ino, st.st_mtime_ns, st.st_size
+
+    def _pick_up_hand_edits(self):
+        """Called under the lock: a file changed behind our back is reloaded, so the next save can't overwrite it."""
+        stamp = self._stamp()
+        if stamp is not None and stamp != self._seen:
+            self._value = self._load()
+            self._seen = self._stamp()
 
     def _load(self):
         try:
@@ -178,6 +205,7 @@ class Store:
 
     def get(self):
         with self._lock:
+            self._pick_up_hand_edits()
             return copy.deepcopy(self._value)
 
     def _write(self, value):
@@ -196,10 +224,12 @@ class Store:
     def update(self, fn):
         """Change the settings under the lock. fn edits a copy; returning False means nothing changed."""
         with self._lock:
+            self._pick_up_hand_edits()
             draft = copy.deepcopy(self._value)
             if fn(draft) is False:
                 return copy.deepcopy(self._value)
             new = normalize(draft, self._defaults)
             self._write(new)
             self._value = new
+            self._seen = self._stamp()
             return copy.deepcopy(new)

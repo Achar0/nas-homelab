@@ -117,10 +117,11 @@ def _creds():
         st = os.stat(path)
     except OSError:
         return {}
-    stamp = (path, st.st_ino, st.st_mtime_ns, st.st_size)
+    stamp = (path, st.st_ino, st.st_mtime_ns, st.st_ctime_ns, st.st_size)   # ctime: chmod and chown count
     with _cache_lock:
         if _cache["stamp"] != stamp:
-            _cache.update(stamp=stamp, creds=_read(path))
+            creds = _read(path)
+            _cache.update(stamp=stamp if creds else None, creds=creds)   # a failed read is tried again next time
         return _cache["creds"]
 
 

@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
 
@@ -115,6 +116,60 @@ class Limits(unittest.TestCase):
     def test_trickle_hits_deadline(self):
         with self.assertRaises(TimeoutError):
             server.get_limited(self.base + "/slow", limit=100_000, deadline=1)
+
+
+class WholeFetchDeadline(unittest.TestCase):
+    def serve(self, handler):
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{srv.server_address[1]}/"
+
+    def test_redirect_chain_can_not_outlast_the_deadline(self):
+        class Slow(BaseHTTPRequestHandler):
+            def do_GET(self):
+                time.sleep(0.4)
+                self.send_response(302)
+                self.send_header("Location", f"/{time.time()}")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        start = time.monotonic()
+        with self.assertRaises(TimeoutError):
+            server.get_limited(self.serve(Slow), deadline=1)
+        self.assertLess(time.monotonic() - start, 1.5)
+
+    def test_slow_headers_then_gap_can_not_outlast_the_deadline(self):
+        class Slow(BaseHTTPRequestHandler):
+            def do_GET(self):
+                time.sleep(0.7)
+                self.send_response(200)
+                self.send_header("Content-Length", "10")
+                self.end_headers()
+                self.wfile.flush()
+                time.sleep(0.8)
+                self.wfile.write(b"0123456789")
+
+            def log_message(self, *a):
+                pass
+        start = time.monotonic()
+        with self.assertRaises(TimeoutError):
+            server.get_limited(self.serve(Slow), deadline=1)
+        self.assertLess(time.monotonic() - start, 1.3)
+
+    def test_normal_fetch_still_returns_the_data(self):
+        class Fine(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *a):
+                pass
+        self.assertEqual(server.get_limited(self.serve(Fine)), b"ok")
 
 
 class Api(unittest.TestCase):

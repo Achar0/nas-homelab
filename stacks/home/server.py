@@ -11,6 +11,7 @@ The only writes are POST /api/attention/<id>/{dismiss,ack}, which change that fi
 every API that isn't explicitly public need the admin login, see auth.py.
 """
 import base64
+import http.client
 import http.cookiejar
 import json
 import os
@@ -100,7 +101,7 @@ FEED_LIMIT = 5_000_000   # bytes: a feed bigger than this is junk
 FEED_DEADLINE = 10       # seconds for the whole download, not per read (a trickling server can't stall us)
 
 
-def get_limited(url, limit=FEED_LIMIT, deadline=FEED_DEADLINE):
+def _download(url, limit, deadline):
     start, chunks, size = time.monotonic(), [], 0
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=min(deadline, 10)) as r:
@@ -114,6 +115,26 @@ def get_limited(url, limit=FEED_LIMIT, deadline=FEED_DEADLINE):
             if size > limit:
                 raise ValueError(f"{url}: larger than {limit} bytes")
             chunks.append(chunk)
+
+
+def get_limited(url, limit=FEED_LIMIT, deadline=FEED_DEADLINE):
+    """The whole fetch within the deadline. In a thread because redirects, slow headers and DNS happen
+    inside urlopen, out of reach of any check between reads. A late thread ends with its socket timeout."""
+    box = {}
+
+    def work():
+        try:
+            box["data"] = _download(url, limit, deadline)
+        except Exception as e:  # noqa: BLE001 - handed to the caller below
+            box["error"] = e
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(deadline)
+    if t.is_alive():
+        raise TimeoutError(f"{url}: slower than {deadline} s")
+    if "error" in box:
+        raise box["error"]
+    return box["data"]
 
 
 def prom_vector(query):
@@ -229,8 +250,8 @@ def gather_inputs(now):
 def scan_containers(containers):
     try:
         STORE.update(lambda s: discovery.apply(s, containers))
-    except (OSError, ValueError) as e:   # e.g. disk full: alerts matter more, just log it
-        log("settings not saved:", e)
+    except Exception as e:  # noqa: BLE001 - disk full, nonsense from Docker: alerts matter more, just log it
+        log("container scan failed:", e)
 
 
 def attention_tick(gather=gather_inputs):
@@ -420,6 +441,26 @@ class Handler(SimpleHTTPRequestHandler):
             self.path = "/admin/settings.html"
         return super().do_GET()
 
+    def from_another_site(self):
+        """SameSite doesn't separate ports, so a page in another app on this NAS would still send our cookie.
+        Browsers always send Origin on a cross-origin POST; no Origin means it isn't a page."""
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return False
+        try:
+            return urllib.parse.urlsplit(origin).netloc.lower() != (self.headers.get("Host") or "").lower()
+        except ValueError:
+            return True
+
+    def refuse_form(self):
+        """Changes that matter take JSON only, which a plain HTML form can't send. True if answered."""
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype == "application/json":
+            return False
+        self.close_connection = True   # the body stays unread
+        self.json({"error": "JSON only"}, 415)
+        return True
+
     def read_json(self, limit):
         """The request's JSON object, or None after answering 413 or 400."""
         try:
@@ -461,6 +502,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self.json({"ok": True, "next": target}, cookie=auth.login_cookie(bool(body.get("remember")), now))
 
     def change_password(self):
+        if self.refuse_form():
+            return None
         body = self.read_json(LOGIN_BODY_LIMIT)
         if body is None:
             return None
@@ -487,6 +530,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self.json({"ok": True}, cookie=auth.login_cookie(remembered, now))
 
     def logout_everywhere(self):
+        if self.refuse_form():
+            return None
         try:
             auth.log_out_everywhere()
         except (OSError, ValueError) as e:
@@ -508,6 +553,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self.json({"ok": True})
 
     def settings_post(self, parts):
+        if self.refuse_form():
+            return None
         body = self.read_json(SETTINGS_BODY_LIMIT)
         if body is None:
             return None
@@ -542,7 +589,7 @@ class Handler(SimpleHTTPRequestHandler):
             if row["running"]:
                 return self.json({"error": "Only a service that isn't running can be removed."}, 400)
             return self.save(lambda s: discovery.remove(s, sid))
-        if action or not body or not set(body) <= {"name", "port", "on_dock"}:
+        if action or not body or not set(body) <= {"name", "port", "on_dock", "scheme"}:
             return self.json({"error": "bad request"}, 400)
         changes = dict(body)
         if "name" in changes:
@@ -582,7 +629,11 @@ class Handler(SimpleHTTPRequestHandler):
 
     def add_feed(self, body):
         url, topic, lang = body.get("url"), body.get("topic"), body.get("lang")
-        if not isinstance(url, str) or urllib.parse.urlsplit(url.strip()).scheme not in ("http", "https"):
+        try:
+            scheme = urllib.parse.urlsplit(url.strip()).scheme if isinstance(url, str) else ""
+        except ValueError:
+            scheme = ""
+        if scheme not in ("http", "https"):
             return self.json({"error": "Enter an address starting with http:// or https://."}, 400)
         url = url.strip()
         if topic not in settings.TOPICS or lang not in settings.LANGS:
@@ -591,7 +642,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json({"error": "That feed is already on the list."}, 400)
         try:
             data = get_limited(url)
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             return self.json({"error": "Couldn't read that address."}, 400)
         try:
             title = feeds.check(data)
@@ -623,6 +674,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+        if self.from_another_site():
+            self.close_connection = True   # the body stays unread
+            return self.json({"error": "wrong origin"}, 403)
         if path == "/api/login":
             return self.login()
         if path == "/api/logout":

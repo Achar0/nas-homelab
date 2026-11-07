@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create the contents of /volume1/docker/admin-auth/auth.json. Run it yourself: nothing is stored or sent.
 
-    python3 scripts/set-admin-password.py > auth.json
+    python3 scripts/set-admin-password.py | ssh <user>@192.168.1.14 'cat > /volume1/docker/admin-auth/auth.json; chmod 600 /volume1/docker/admin-auth/auth.json'
 
 The prompts go to the terminal and only the file's contents go to the output.
 This is also the way back in if the password is forgotten.

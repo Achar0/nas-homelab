@@ -93,6 +93,16 @@ class Session(unittest.TestCase):
                 f.write(raw)
             self.assertFalse(auth.configured(), raw)
 
+    @unittest.skipIf(os.geteuid() == 0, "root can read anything")
+    def test_fixing_permissions_is_noticed(self):
+        self.set_up_env()
+        self.assertTrue(auth.configured())
+        os.chmod(AUTH_FILE, 0)
+        auth._cache.update(stamp=None, creds={})   # as after a restart while the file is unreadable
+        self.assertFalse(auth.configured())
+        os.chmod(AUTH_FILE, 0o600)
+        self.assertTrue(auth.configured())
+
     def test_short_key_refuses(self):
         self.set_up_env(key="k" * 31)
         self.assertFalse(auth.configured())

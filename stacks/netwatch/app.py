@@ -252,7 +252,7 @@ def push_enabled():
     try:
         with urllib.request.urlopen(HOME_URL + "/api/internal/layout", timeout=2) as r:
             return json.load(r).get("push", True) is not False
-    except (OSError, ValueError, AttributeError):
+    except Exception:  # noqa: BLE001 - whatever went wrong, an alert must not be lost
         return True
 
 

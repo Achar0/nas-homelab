@@ -128,12 +128,19 @@ function portControl(s) {
     data-act="port" data-id="${esc(s.id)}" data-key="port-${esc(s.id)}" aria-label="Port for ${esc(s.name)}">`;
 }
 
+function schemeControl(s) {
+  return `<select data-act="scheme" data-id="${esc(s.id)}" data-key="scheme-${esc(s.id)}" aria-label="Scheme for ${esc(s.name)}">
+    ${["http", "https"].map((x) => `<option${x === s.scheme ? " selected" : ""}>${x}</option>`).join("")}</select>`;
+}
+
+const nameInput = (s) => `<input class="name-input" value="${esc(s.name)}" maxlength="40" data-act="name" data-id="${esc(s.id)}" data-key="name-${esc(s.id)}" aria-label="Name for ${esc(s.container)}">`;
+
 function drawNew(rows) {
   if (!rows.length) return "";
   return `<h3>New</h3><div class="group">${rows.map((s) => `<div class="row">
-    <div class="grow"><input class="name-input" value="${esc(s.name)}" maxlength="40" data-act="name" data-id="${esc(s.id)}" data-key="name-${esc(s.id)}" aria-label="Name for ${esc(s.container)}">
+    <div class="grow">${nameInput(s)}
       <small>${esc(s.container)}${s.running ? "" : ' · <span class="off-label">not running</span>'}</small></div>
-    ${portControl(s)}
+    ${schemeControl(s)}${portControl(s)}
     ${toggle(false, `Show ${s.name} on the dock`, `data-act="dock-on" data-id="${esc(s.id)}" data-key="dock-${esc(s.id)}"`, !s.port)}
     <button class="link" data-act="ignore" data-id="${esc(s.id)}">Ignore</button>
     ${s.running ? "" : `<button class="danger" data-act="remove" data-id="${esc(s.id)}">Remove</button>`}
@@ -145,7 +152,8 @@ function drawDock() {
   const known = S.services.filter((s) => s.state === "known");
   const rows = known.map((s, i) => `<div class="row" draggable="true" data-list="dock" data-index="${i}">
     <span class="handle" aria-hidden="true">≡</span>
-    <div class="grow">${esc(s.name)}<small>${esc(serviceDescription(s))}${s.running ? "" : ' · <span class="off-label">not running</span>'}</small></div>
+    <div class="grow">${s.id.startsWith("c-") ? nameInput(s) : esc(s.name)}<small>${esc(serviceDescription(s))}${s.running ? "" : ' · <span class="off-label">not running</span>'}</small></div>
+    ${s.id.startsWith("c-") ? schemeControl(s) + portControl(s) : ""}
     ${s.running ? "" : `<button class="danger" data-act="remove" data-id="${esc(s.id)}">Remove</button>`}
     ${moveButtons("dock", s.id, i, known.length)}
     ${toggle(s.on_dock, `Show ${s.name} on the dock`, `data-act="dock-on" data-id="${esc(s.id)}" data-key="dock-${esc(s.id)}"`)}
@@ -265,6 +273,7 @@ pane.addEventListener("change", (e) => {
   const el = e.target;
   const url = `/api/settings/services/${encodeURIComponent(el.dataset.id)}`;
   if (el.dataset.act === "name") save(url, { name: el.value });
+  if (el.dataset.act === "scheme") save(url, { scheme: el.value });
   if (el.dataset.act === "port") {
     if (el.value === "") save(url, { port: null });
     else if (/^\d+$/.test(el.value)) save(url, { port: Number(el.value) });
