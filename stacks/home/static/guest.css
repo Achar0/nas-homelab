@@ -52,7 +52,9 @@
   .guest { height: auto; overflow: visible; padding-inline: 1rem; padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
   .g-actions { width: 100%; }
   .g-ugos { flex: 1; justify-content: center; }
-  .g-num { flex: 1 1 7rem; }
+  .g-state { flex: 1 1 100%; }
+  .g-num { flex: 1 1 40%; }
+  .g-num b { white-space: nowrap; }
   .eps { flex-wrap: wrap; overflow-x: visible; }
   .ep { flex: 1 1 100%; max-width: none; }
 }
