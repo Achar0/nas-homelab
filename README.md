@@ -186,10 +186,11 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 
 **Admin login.** One password for Home, Mission Control and Netwatch, shared through a signed cookie (`stacks/home/auth.py`, copied into the other two stacks).
 
-- **Settings:** `/volume1/docker/admin-auth.env` (`ADMIN_PASSWORD_HASH`, `SESSION_SECRET`, mode 600, not in git). Create or change it with `python3 scripts/set-admin-password.py | ssh <user>@192.168.1.14 'cat > /volume1/docker/admin-auth.env; chmod 600 /volume1/docker/admin-auth.env'`, then recreate all three stacks with `docker compose up -d --force-recreate`. Doing so logs every device out.
+- **Where it lives:** `/volume1/docker/admin-auth/auth.json` (mode 600, not in git). Home mounts the folder read-write; Mission Control and Netwatch read-only. The services notice a change straight away, with no restart.
+- **Changing it:** Settings → Account. If the password is forgotten: `python3 scripts/set-admin-password.py | ssh <user>@192.168.1.14 'cat > /volume1/docker/admin-auth/auth.json; chmod 600 /volume1/docker/admin-auth/auth.json'`. That logs every device out.
 - **Sessions:** 30 days with "remember", otherwise 12 hours or until the browser closes. Cookies are per hostname, so the LAN address and the Tailscale name each need their own login.
 - **Wrong passwords:** after 5 failures from one address, wait 30 s, doubling up to 15 min.
-- **If the settings are missing or invalid:** every login is refused, locked routes stay locked, and each service logs why at start-up. A missing file stops Compose from starting the stack.
+- **If the file is missing or invalid:** every login is refused, locked routes stay locked, and each service logs why at start-up.
 
 **Owner's page layout.** Desktop fits one screen; phones stack and scroll.
 
@@ -205,7 +206,17 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 - **Right rail:** CPU, memory, temperature, free space, qBittorrent, AdGuard and Speedtest. Each one opens Mission Control at the matching chart or card; Mission Control itself is reached from the dock (no duplicate link).
 - **Dock:** the same apps as Mission Control's dock, plus Mission Control itself.
 
-**Attention rules.**
+**Settings** (`/admin/settings`, behind the admin login). Design: [`docs/superpowers/specs/2026-11-07-admin-settings-design.md`](docs/superpowers/specs/2026-11-07-admin-settings-design.md). Every change saves at once.
+
+- **News feeds:** switch on or off, add by address + topic + language (the NAS test-fetches it first), or remove.
+- **Alert rules:** the numbers in the table below, and phone notifications on or off. The switch covers Home and Netwatch; Uptime Kuma has its own notification settings.
+- **Services & dock:** what appears, and in what order, in the dock (shared with Mission Control), the Home rail and the Mission Control cards. A new container appears under "New", switched off: name and port are filled in where Docker makes them clear, otherwise the row asks.
+- **Apps:** links into each app's own settings and UGOS.
+- **Account:** change the password (other devices are logged out), or log out everywhere.
+- **Where it's stored:** `home/data/settings.json`, not in git. [`feeds.json`](stacks/home/feeds.json) is only the first-run list. A file that can't be read is renamed `settings.json.bad-<time>`, Home runs on the defaults, and the page says so.
+- **Mission Control and Netwatch** read the dock, cards and phone switch from Home's `/api/internal/layout`, which only answers this machine. If Home is down, they use their built-in defaults, and Netwatch keeps alerting.
+
+**Attention rules.** The numbers below are the defaults; they can be changed in Settings.
 
 | Level | When |
 |---|---|
@@ -216,7 +227,7 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 - **Acknowledge** closes the takeover on every device; the item stays pinned while the problem lasts. One push is sent per incident.
 - Uptime Kuma and Netwatch keep sending their own alerts.
 
-**News feeds:** [`feeds.json`](stacks/home/feeds.json), editable without code changes. It holds 11 English and Italian sources: The Verge, TechCrunch, Ars Technica, MIT Technology Review, Wired Italia, DDay.it, Il Sole 24 Ore (Tecnologia and Finanza), CNBC (Markets and Technology) and ScienceDaily.
+**News feeds:** managed in Settings. The first-run list, [`feeds.json`](stacks/home/feeds.json), holds 11 English and Italian sources: The Verge, TechCrunch, Ars Technica, MIT Technology Review, Wired Italia, DDay.it, Il Sole 24 Ore (Tecnologia and Finanza), CNBC (Markets and Technology) and ScienceDaily.
 
 - Feeds are fetched every 15 min and kept for 3 days.
 - Near-duplicate stories are merged, and each source is limited to 8 stories so busy feeds can't take over.
@@ -374,6 +385,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-07**
 
+- **Settings** at `/admin/settings`: news feeds, alert numbers, phone switch, dock/rail/card order, app links, password and log out everywhere (#3). New containers appear there by themselves. The admin login moved from `admin-auth.env` to `admin-auth/auth.json`, so password changes need no restart.
 - **Container names** now carry their port (`autobangumi-7892`), set with `container_name`. `tailscale` has no port, and the UGOS-managed `qbittorrent-app-1` and `firefox-app-1` keep their names. CPU and memory history for AdGuard and Speedtest continues under the new names.
 - **Public summary and admin login:** `:3001` is now a plain summary for family and guests with an **Open UGOS** button; the owner's page moved to `/admin/` behind one password, which also locks Mission Control and Netwatch. Glances gets its own password.
 - **Home:** alert cards with priority order and acknowledged banners, news archive with an *Opened* tab, plain-arrow keys only, Uptime Kuma connected (5 monitors), duplicate Mission Control link removed.
