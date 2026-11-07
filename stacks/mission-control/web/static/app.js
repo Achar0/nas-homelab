@@ -11,6 +11,7 @@ const state = { metric: "cpu", range: "24H", open: null };
 // ---------- data ----------
 async function api(path, params) {
   const r = await fetch(`${path}?${new URLSearchParams(params)}`);
+  if (r.status === 401) location.reload();   // session ended: the reload lands on the login
   if (!r.ok) throw new Error(`${path} ${r.status}`);
   const j = await r.json();
   if (j.status && j.status !== "success") throw new Error(j.error || "query failed");

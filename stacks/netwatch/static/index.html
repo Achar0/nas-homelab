@@ -171,7 +171,9 @@ function panel() {
 
 async function refresh() {
   try {
-    data = await (await fetch("/api/state", { cache: "no-store" })).json();
+    const r = await fetch("/api/state", { cache: "no-store" });
+    if (r.status === 401) location.reload();   // session ended: the reload lands on the login
+    data = await r.json();
     panel(); render();
   } catch (e) { document.getElementById("status-t").textContent = "Can't reach Netwatch"; }
 }

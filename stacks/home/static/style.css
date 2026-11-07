@@ -196,3 +196,5 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
   :root { --text-2: #c7c7cc; }
   .story, .tile, .att, .ep { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3); }
 }
+
+.logout { color: var(--text-2); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; }

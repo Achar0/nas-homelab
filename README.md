@@ -3,8 +3,8 @@
 Technical documentation and configuration for the home NAS (UGREEN DXP4800, UGOS Pro).
 Every Docker stack running on the NAS is mirrored here, with secrets removed, so changes can be reviewed, versioned and rolled back.
 
-- **Home** (landing page): http://192.168.1.14:3001
-- **Mission Control** (performance history): http://192.168.1.14:8800
+- **Home** (guest summary): http://192.168.1.14:3001 — the owner's page is at `/admin/`, behind the admin login
+- **Mission Control** (performance history): http://192.168.1.14:8800 — needs the admin login
 - **Last full review:** 2026-11-06
 
 ---
@@ -89,16 +89,16 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Service | URL | Stack folder | Purpose |
 |---|---|---|---|
 | AdGuard Home | http://192.168.1.14:8080 | `adguard` | Network-wide ad and tracker blocking (DNS) |
-| Home | http://192.168.1.14:3001 | `home` | Landing page: attention (urgent takeover + push), news flashcards, episode arrivals, dock (own code) |
+| Home | http://192.168.1.14:3001 | `home` | Public summary for family and guests; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, dock) needs the admin login (own code) |
 | Homepage (retired) | — | `homepage` | Old gethomepage dashboard; only its `dockerproxy` still runs |
 | qBittorrent | http://192.168.1.14:8888 | UGREEN app (`@appstore`) | Downloads and seeding |
 | AutoBangumi | http://192.168.1.14:7892 | `autobangumi` | Anime RSS (Mikan) → qBittorrent, renames for the Theater |
 | Speedtest Tracker | http://192.168.1.14:8765 | `speedtest-tracker` | Internet speed test every 6 h, 1 year of history |
 | Uptime Kuma | http://192.168.1.14:3002 | `uptime-kuma` | Uptime monitors and phone alerts (ntfy) |
 | Dockge | http://192.168.1.14:5001 | `dockge` | Web UI for compose stacks in `/volume1/docker` |
-| Glances | http://192.168.1.14:61208 | `glances` | System metrics API (feeds the dashboard) |
+| Glances | http://192.168.1.14:61208 | `glances` | System metrics, behind its own password (user `glances`) |
 | Netwatch | http://192.168.1.14:8790 | `netwatch` | Connection map and attacker flags (own code) |
-| Mission Control | http://192.168.1.14:8800 | `mission-control` | Performance history (1 year) + service stats, one screen (own code + Prometheus) |
+| Mission Control | http://192.168.1.14:8800 | `mission-control` | Performance history (1 year) + service stats, one screen, needs the admin login (own code + Prometheus) |
 | Minecraft | `192.168.1.14:25565` | `minecraft_server` | Fabric server, whitelisted; **normally stopped** |
 | Tailscale | — | `tailscale` | Remote access: node `nas` plus a subnet route for the home LAN |
 | Firefox | http://192.168.1.14:5888 | UGREEN app (`@appstore`) | Browser on the NAS; also used for headless screenshots |
@@ -177,9 +177,21 @@ Theater conventions:
 
 The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replaced the gethomepage dashboard on 2026-11-07. Design: [`docs/superpowers/specs/2026-11-07-home-info-flow-design.md`](docs/superpowers/specs/2026-11-07-home-info-flow-design.md).
 
-**Layout.** Desktop fits one screen; phones stack and scroll.
+**Who sees what.** Design: [`docs/superpowers/specs/2026-11-07-public-summary-design.md`](docs/superpowers/specs/2026-11-07-public-summary-design.md).
 
-- **Header:** greeting by time of day, plus date and time.
+- **Guests at `/`:** plain-language status (only "Everything's running" when every source could be read), internet speed, free storage, news without the *Opened* tab, downloads, **Open UGOS** (each person logs in with their own UGOS account) and **Admin**. Recognised episodes appear by name; everything else is only counted ("1 other download"). Intrusion alerts never reach this page. All of it comes from `/api/public/summary` and `/api/news`.
+- **Owner at `/admin/`:** everything described below, behind the admin login.
+
+**Admin login.** One password for Home, Mission Control and Netwatch, shared through a signed cookie (`stacks/home/auth.py`, copied into the other two stacks).
+
+- **Settings:** `/volume1/docker/admin-auth.env` (`ADMIN_PASSWORD_HASH`, `SESSION_SECRET`, mode 600, not in git). Create or change it with `python3 scripts/set-admin-password.py | ssh <user>@192.168.1.14 'cat > /volume1/docker/admin-auth.env; chmod 600 /volume1/docker/admin-auth.env'`, then recreate all three stacks with `docker compose up -d --force-recreate`. Doing so logs every device out.
+- **Sessions:** 30 days with "remember", otherwise 12 hours or until the browser closes. Cookies are per hostname, so the LAN address and the Tailscale name each need their own login.
+- **Wrong passwords:** after 5 failures from one address, wait 30 s, doubling up to 15 min.
+- **If the settings are missing or invalid:** every login is refused, locked routes stay locked, and each service logs why at start-up. A missing file stops Compose from starting the stack.
+
+**Owner's page layout.** Desktop fits one screen; phones stack and scroll.
+
+- **Header:** greeting by time of day, plus date and time, and **Log out**.
 - **Needs attention:** one card per alert in a row at the top, in priority order: urgent, urgent but acknowledged (kept as a red banner card while the problem lasts), warning, resolved. With nothing to report it reads *All quiet on the NAS*.
   - Each card has ✕ to dismiss and a link to the right app.
   - Dismissals are stored on the NAS, so they sync across devices.
@@ -344,7 +356,9 @@ Root-only tasks:
 | Docker socket | Dockge has full access (root-equivalent). Home and Mission Control only get the read-only proxy (also on `127.0.0.1:2375`, NAS-local). |
 | Home | The only writes are `POST /api/attention/<id>/dismiss|ack`, which change Home's own `data/state.json`. Feed text is reduced to plain text and escaped before display. No login (LAN + tailnet only). |
 | Raw disk access | `mc-smartctl-exporter` gets exactly `/dev/sda`, `/dev/sdb`, `/dev/nvme0` with `SYS_RAWIO`/`SYS_ADMIN` to read SMART (approved 2026-11-06). Not privileged. |
-| Mission Control | Prometheus, exporters and collector listen on `127.0.0.1` only; the page (:8800) exposes read-only queries, never Prometheus' admin API. No login (LAN + tailnet only). |
+| Mission Control | Prometheus, exporters and collector listen on `127.0.0.1` only; the page (:8800) exposes read-only queries, never Prometheus' admin API. Every path needs the admin login. |
+| Admin login | Home's `/admin/` and APIs, Mission Control and Netwatch refuse without the session cookie (HttpOnly, SameSite=Strict). Netwatch skips the check for requests from `127.0.0.1`, because Home and Mission Control read it over loopback. Over plain HTTP until HTTPS arrives (#6), the password and cookie travel unencrypted on the home network (Tailscale encrypts its own traffic), and other apps on the same address also receive the cookie. |
+| Glances | Its own password (`glances/data/glances.pwd`, a hash, not in git). `/api/4/status` (version only), `/docs` and `/openapi.json` (generic API description) stay open; they hold no system data, and everything else answers 401. |
 | Secrets | `.env` files and app data are never committed. See `.gitignore` and the `.env.example` files. |
 | Runs as root | The UGREEN qBittorrent app uses `PUID=0`/`PGID=0`. |
 | Monitoring | Uptime Kuma (service up/down → ntfy), Netwatch (attacker or unexpected-inbound flags → ntfy), Mission Control (history, SMART health). |
@@ -352,12 +366,13 @@ Root-only tasks:
 
 ## 11. Known issues and next steps
 
-The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features (public summary page, admin login and Settings, TV idle screen, HTTPS/passkeys), operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
+The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features (admin Settings, TV idle screen, HTTPS/passkeys), operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
 
 ## 12. Changelog
 
 **2026-11-07**
 
+- **Public summary and admin login:** `:3001` is now a plain summary for family and guests with an **Open UGOS** button; the owner's page moved to `/admin/` behind one password, which also locks Mission Control and Netwatch. Glances gets its own password.
 - **Home:** alert cards with priority order and acknowledged banners, news archive with an *Opened* tab, plain-arrow keys only, Uptime Kuma connected (5 monitors), duplicate Mission Control link removed.
 - **Home** replaces the gethomepage dashboard on :3001: pinned attention with an urgent full-screen takeover and ntfy push, a two-card news carousel (11 EN/IT feeds), episode arrivals, compact Mission Control rail, dock. Old Homepage kept behind a compose profile.
 

@@ -7,7 +7,9 @@ services:
     container_name: home
     restart: unless-stopped
     network_mode: host
-    env_file: .env                  # QBT_USER/QBT_PASS, KUMA_API_KEY, NTFY_URL (not in git)
+    env_file:
+      - .env                        # QBT_USER/QBT_PASS, KUMA_API_KEY, NTFY_URL (not in git)
+      - ../admin-auth.env           # ADMIN_PASSWORD_HASH, SESSION_SECRET (not in git)
     environment:
       PORT: 3001
       DATA_DIR: /data

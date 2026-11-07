@@ -13,3 +13,5 @@
 .superpowers/
 __pycache__/
 *.pyc
+admin-auth.env
+!stacks/home/static/icons/ugos.png

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>Home</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="flow" aria-label="Today">
+      <header class="hello">
+        <h1 id="hello">Hello</h1>
+        <p><span id="today"></span> · <button class="logout" id="logout">Log out</button></p>
+      </header>
+
+      <!-- Needs attention: pinned until dealt with -->
+      <section class="attention" id="attention" aria-label="Needs attention" aria-live="polite"></section>
+
+      <!-- News: two flashcards, step one at a time -->
+      <section class="news" aria-label="News">
+        <div class="section-head">
+          <h2>News</h2>
+          <div class="segmented" role="tablist" aria-label="Topic" id="topics"></div>
+          <div class="pager">
+            <button class="round" id="prev" aria-label="Previous story">‹</button>
+            <span id="count">0 / 0</span>
+            <button class="round" id="next" aria-label="Next story">›</button>
+          </div>
+        </div>
+        <div class="deck" id="deck" tabindex="0" aria-roledescription="carousel"><div class="track" id="track"></div></div>
+      </section>
+
+      <!-- Media: did the episodes arrive? -->
+      <section class="arrivals" aria-label="Just arrived">
+        <h2>Just arrived</h2>
+        <div class="eps" id="eps"></div>
+      </section>
+    </section>
+
+    <!-- Compact Mission Control -->
+    <aside class="rail" id="rail" aria-label="NAS at a glance"></aside>
+
+    <nav class="dock" id="dock" aria-label="Apps"></nav>
+  </main>
+
+  <!-- Urgent takeover -->
+  <div class="takeover" id="takeover" role="alertdialog" aria-modal="true" aria-labelledby="t-title" hidden>
+    <div class="t-icon" aria-hidden="true">!</div>
+    <h2 id="t-title"></h2>
+    <p id="t-detail"></p>
+    <p class="t-note">A notification was sent to your phone.</p>
+    <div class="t-actions">
+      <a class="t-open" id="t-open" target="_blank" rel="noopener">Open</a>
+      <button class="t-ack" id="t-ack">Acknowledge</button>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

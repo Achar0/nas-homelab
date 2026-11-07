@@ -1,4 +1,7 @@
-"""Just arrived / downloading, from qBittorrent's torrent list (pure)."""
+"""Just arrived / downloading, from qBittorrent's torrent list (pure).
+
+`known` means the name matched a show/episode pattern: only those are named on the guest page.
+"""
 import os
 import re
 
@@ -7,6 +10,7 @@ STALLED = {"stalledDL", "metaDL", "missingFiles", "error"}
 
 _PATH = re.compile(r"(?:^|/)(?P<show>[^/]+?) S(?P<s>\d{1,2})E(?P<e>\d{1,4})(?:-E\d+)?\.[A-Za-z0-9]+$")
 _FANSUB = re.compile(r"^\[[^\]]+\]\s*(?P<show>.+?)\s+-\s+(?P<e>\d{1,4})(?:v\d)?(?:\s*[\[(].*)?(?:\.[A-Za-z0-9]+)?$")
+_YEAR = re.compile(r"^E(19|20)\d\d$")
 _BATCH = re.compile(r"^(?:\[[^\]]+\])?\[(?P<show>[^\]]+)\]\[(?P<range>\d{1,4}-\d{1,4})\]")
 
 
@@ -30,16 +34,21 @@ def _show_episode(name, path):
     return re.sub(r"\[[^\]]*\]", "", base).strip(" -._") or base, ""
 
 
+def _known(ep):
+    """A show/episode pattern matched, and the "episode" isn't really a year ("Some Film - 2024")."""
+    return bool(ep) and not _YEAR.match(ep)
+
+
 def build(torrents, now):
     arrived, downloading = [], []
     for t in torrents:
         show, ep = show_episode(t["name"], t.get("content_path", ""))
         if t["progress"] >= 1:
             if t.get("completion_on", 0) > now - WINDOW:
-                arrived.append({"show": show, "ep": ep, "at": t["completion_on"]})
+                arrived.append({"show": show, "ep": ep, "at": t["completion_on"], "known": _known(ep)})
         else:
             stalled = t["state"] in STALLED
             downloading.append({"show": show, "ep": ep, "progress": round(t["progress"], 3),
-                                "eta": None if stalled or t.get("eta", 0) >= 8640000 else t["eta"], "stalled": stalled})
+                                "eta": None if stalled or t.get("eta", 0) >= 8640000 else t["eta"], "stalled": stalled, "known": _known(ep)})
     arrived.sort(key=lambda a: -a["at"])
     return {"arrived": arrived[:12], "downloading": downloading}

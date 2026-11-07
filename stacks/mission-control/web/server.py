@@ -11,6 +11,8 @@ import urllib.error
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+import auth
+
 PORT = int(os.environ.get("PORT", "8800"))
 PROM = os.environ.get("PROM_URL", "http://127.0.0.1:9090")
 NETWATCH = os.environ.get("NETWATCH_URL", "http://127.0.0.1:8790")
@@ -70,7 +72,13 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError as e:
             self.send_bytes(502, ('{"error": "%s"}' % type(e).__name__).encode(), "application/json")
 
+    def do_HEAD(self):
+        if auth.require_login(self):
+            super().do_HEAD()
+
     def do_GET(self):
+        if not auth.require_login(self):   # every path: page, vendor files and data
+            return None
         path, _, qs = self.path.partition("?")
         if path.startswith("/api/prom/"):
             url = prom_target(path, qs)
@@ -102,6 +110,7 @@ def make_server(port):
 
 
 if __name__ == "__main__":
+    auth.startup_check(lambda msg: print(msg, flush=True))
     ensure_vendor()
     print("mission control on port", PORT, flush=True)
     make_server(PORT).serve_forever()

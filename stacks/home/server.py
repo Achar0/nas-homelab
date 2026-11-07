@@ -6,6 +6,9 @@ Serves static/ and a small API, and runs three background workers:
   arrivals   every 60 s    -> /api/arrivals
 State that must survive restarts (incidents, dismissals, acknowledgements) is in DATA/state.json.
 The only writes are POST /api/attention/<id>/{dismiss,ack}, which change that file and nothing else.
+
+/ is the public guest page and /api/public/summary its data. The owner's page (static/admin/) and
+every API that isn't explicitly public need the admin login, see auth.py.
 """
 import base64
 import http.cookiejar
@@ -20,7 +23,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import arrivals
 import attention
+import auth
 import feeds
+import guest
 import news_db
 
 E = os.environ.get
@@ -38,10 +43,14 @@ KUMA = E("KUMA_URL", "http://127.0.0.1:3002")
 NTFY_URL = E("NTFY_URL", "")
 UA = {"User-Agent": "nas-home/1.0 (personal feed reader)"}
 
+ADMIN_STATIC = os.path.join(STATIC, "admin")
+LOGIN_BODY_LIMIT = 4096
+THROTTLE = auth.Throttle()
+login_lock = threading.Lock()   # one password check at a time: scrypt is deliberately expensive
 lock = threading.Lock()
 STATE = {}
 LATEST = {"attention": {"items": [], "urgent": None, "sources_down": []}, "news": [], "news_errors": [],
-          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}}
+          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0}
 
 
 def log(*a):
@@ -113,6 +122,7 @@ def read_prom():
         "smart_status": prom_by("smartctl_device_smart_status", "device"),
         "drive_temp": prom_by('smartctl_device_temperature{temperature_type="current"}', "device"),
         "free_ratio": prom_one('node_filesystem_avail_bytes{mountpoint="/volume1"} / node_filesystem_size_bytes{mountpoint="/volume1"}'),
+        "free_bytes": prom_one('node_filesystem_avail_bytes{mountpoint="/volume1"}'),
         "speed_last": prom_one("mc_speedtest_download_bits_per_second"),
         "speed_median": prom_one("quantile_over_time(0.5, mc_speedtest_download_bits_per_second[30d])"),
     }
@@ -197,6 +207,7 @@ def attention_tick(gather=gather_inputs):
     with lock:
         items, urgent, pushes = attention.evaluate(inputs, STATE, now)
         LATEST["attention"] = {"items": items, "urgent": urgent, "sources_down": down}
+        LATEST["inputs"], LATEST["inputs_at"] = inputs, now   # raw readings for the guest status line
         try:
             save_state()
         except OSError as e:   # e.g. disk full: keep showing and pushing, just log it
@@ -254,18 +265,61 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=STATIC, **kw)
 
-    def json(self, obj, code=200):
+    def json(self, obj, code=200, cookie=None):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
+
+    def redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def logged_in(self):
+        return auth.session_ok(self.headers.get("Cookie"), time.time())
+
+    def is_admin_file(self):
+        """Judged on the resolved file, so /%61dmin/ or /x/../admin/ can't slip past."""
+        resolved = self.translate_path(self.path)
+        return resolved == ADMIN_STATIC or resolved.startswith(ADMIN_STATIC + os.sep)
+
+    def do_HEAD(self):
+        if self.is_admin_file() and not auth.require_login(self):
+            return
+        super().do_HEAD()
 
     def do_GET(self):
         path, _, qs = self.path.partition("?")
         q = urllib.parse.parse_qs(qs)
+        if path == "/":
+            if self.logged_in():   # never back to ?next: another port just refused this cookie, it would loop
+                return self.redirect(auth.DEFAULT_NEXT)
+            return super().do_GET()
+        if path == "/api/public/summary":
+            data = guest.summary(LATEST["inputs"], LATEST["arrivals"], time.time(), LATEST["inputs_at"])
+            demo = guest.DEMO.get((q.get("demo") or [""])[0])
+            return self.json({**data, "status": demo} if demo else data)
+        if path == "/api/news" and "opened" not in q.get("topic", []):
+            topic = (q.get("topic") or ["all"])[0]
+            items = [i for i in LATEST["news"] if topic == "all" or i["topic"] == topic]
+            data = {"items": items, "updated": LATEST["news_updated"]}
+            return self.json({**data, "errors": LATEST["news_errors"]} if self.logged_in() else data)
+        if path.startswith("/api/"):
+            if not auth.require_login(self):
+                return None
+        elif self.is_admin_file():
+            if not auth.require_login(self):
+                return None
+            if self.translate_path(self.path) == ADMIN_STATIC and not path.endswith("/"):
+                return self.redirect("/admin/")
         if path == "/api/attention":
             data = dict(LATEST["attention"])
             if q.get("demo") == ["urgent"]:   # preview the takeover; never stored, never pushed
@@ -273,13 +327,9 @@ class Handler(SimpleHTTPRequestHandler):
             elif q.get("demo") == ["many"]:
                 data = {**data, "items": DEMO_MANY + data["items"], "urgent": None}
             return self.json(data)
-        if path == "/api/news":
-            topic = (q.get("topic") or ["all"])[0]
-            if topic == "opened":   # stories whose link you opened, last 30 days, most recent first
-                items = news_db.history(NEWS_DB, opened_only=True, since=time.time() - 30 * 86400)
-                return self.json({"items": items, "updated": time.time(), "errors": []})
-            items = [i for i in LATEST["news"] if topic == "all" or i["topic"] == topic]
-            return self.json({"items": items, "updated": LATEST["news_updated"], "errors": LATEST["news_errors"]})
+        if path == "/api/news":   # stories whose link you opened, last 30 days, most recent first
+            items = news_db.history(NEWS_DB, opened_only=True, since=time.time() - 30 * 86400)
+            return self.json({"items": items, "updated": time.time(), "errors": []})
         if path == "/api/arrivals":
             return self.json(LATEST["arrivals"])
         if path.startswith("/api/prom/"):
@@ -294,8 +344,44 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(404)
         return super().do_GET()
 
+    def login(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length > LOGIN_BODY_LIMIT:
+            self.close_connection = True   # the body stays unread
+            return self.json({"error": "too big"}, 413)
+        try:
+            body = json.loads(self.rfile.read(length)) if length > 0 else None
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or not isinstance(body.get("pw"), str):
+            return self.json({"error": "bad request"}, 400)
+        if not auth.configured():
+            log("login refused: ADMIN_PASSWORD_HASH or SESSION_SECRET is missing or invalid")
+            return self.json({"error": "not_configured"}, 503)
+        addr, now = self.client_address[0], time.time()
+        with login_lock:
+            wait = THROTTLE.wait(addr, now)
+            if wait:
+                return self.json({"error": "wait", "retry_after": wait}, 429)
+            if not auth.login_ok(body["pw"]):
+                THROTTLE.fail(addr, now)
+                return self.json({"error": "wrong"}, 401)
+            THROTTLE.reset(addr)
+        target = auth.safe_next(body.get("next"), auth.request_hostname(self))
+        return self.json({"ok": True, "next": target}, cookie=auth.login_cookie(bool(body.get("remember")), now))
+
     def do_POST(self):
-        parts = self.path.split("?")[0].strip("/").split("/")
+        path = self.path.split("?")[0]
+        if path == "/api/login":
+            return self.login()
+        if path == "/api/logout":
+            return self.json({"ok": True}, cookie=auth.logout_cookie())
+        if not auth.require_login(self):
+            return None
+        parts = path.strip("/").split("/")
         if len(parts) == 4 and parts[:2] == ["api", "news"] and parts[3] == "open":
             ok = news_db.mark_opened(NEWS_DB, urllib.parse.unquote(parts[2]), time.time())
             return self.json({"ok": True}) if ok else self.send_error(404)
@@ -330,6 +416,7 @@ def make_server(port):
 
 if __name__ == "__main__":
     load_state()
+    auth.startup_check(log)
     for fn, every in ((attention_tick, 30), (feeds_tick, 900), (arrivals_tick, 60)):
         threading.Thread(target=loop, args=(fn, every), daemon=True).start()
     log("home on port", PORT)

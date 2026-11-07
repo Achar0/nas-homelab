@@ -10,6 +10,7 @@ let netState = null, preview = null, big = null, timer = null;
 
 async function fetchState() {
   const r = await fetch("/api/netwatch");
+  if (r.status === 401) location.reload();   // session ended: the reload lands on the login
   if (!r.ok) throw new Error("netwatch " + r.status);
   netState = await r.json();
   return netState;
