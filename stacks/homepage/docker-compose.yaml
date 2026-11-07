@@ -16,7 +16,7 @@ services:
   # Read-only window (used by Home and Mission Control) on Docker: only container list + stats, no start/stop/exec
   dockerproxy:
     image: ghcr.io/tecnativa/docker-socket-proxy:latest
-    container_name: dockerproxy
+    container_name: dockerproxy-2375
     restart: unless-stopped
     environment:
       CONTAINERS: 1

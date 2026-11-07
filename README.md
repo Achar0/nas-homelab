@@ -90,7 +90,7 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 |---|---|---|---|
 | AdGuard Home | http://192.168.1.14:8080 | `adguard` | Network-wide ad and tracker blocking (DNS) |
 | Home | http://192.168.1.14:3001 | `home` | Public summary for family and guests; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, dock) needs the admin login (own code) |
-| Homepage (retired) | — | `homepage` | Old gethomepage dashboard; only its `dockerproxy` still runs |
+| Homepage (retired) | — | `homepage` | Old gethomepage dashboard; only its docker proxy (`dockerproxy-2375`) still runs |
 | qBittorrent | http://192.168.1.14:8888 | UGREEN app (`@appstore`) | Downloads and seeding |
 | AutoBangumi | http://192.168.1.14:7892 | `autobangumi` | Anime RSS (Mikan) → qBittorrent, renames for the Theater |
 | Speedtest Tracker | http://192.168.1.14:8765 | `speedtest-tracker` | Internet speed test every 6 h, 1 year of history |
@@ -103,6 +103,8 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Tailscale | — | `tailscale` | Remote access: node `nas` plus a subnet route for the home LAN |
 | Firefox | http://192.168.1.14:5888 | UGREEN app (`@appstore`) | Browser on the NAS; also used for headless screenshots |
 | UGOS / Theater | https://192.168.1.14:9443 | built in | NAS admin, 影视中心 (media library) |
+
+Containers are named `name-port` (`autobangumi-7892`), except `tailscale` (no port) and the UGOS-managed apps.
 
 Notes per service:
 
@@ -283,11 +285,11 @@ A one-screen page for "what happened?": every chart opens on the last 24 h and g
 
 | Container | Role | Port |
 |---|---|---|
-| `mc-prometheus` | Time-series database, scrape every 15 s, retention 365 days, data in `data/prometheus` | 127.0.0.1:9090 |
-| `mc-node-exporter` | CPU, memory, load, temperatures (hwmon), disk I/O, network, md RAID | 127.0.0.1:9100 |
-| `mc-smartctl-exporter` | SMART for `sda`, `sdb`, `nvme0` (see Security) | 127.0.0.1:9633 |
-| `mc-collector` | Own Python (stdlib only): per-container CPU/RAM via the read-only docker proxy, qBittorrent, AdGuard, Speedtest Tracker, Tailscale (local API socket). A failing source only sets `mc_up{source=…} 0` | 127.0.0.1:9101 |
-| `mc-web` | Own Python: serves the page and vendored JS (uPlot, globe.gl, topojson), proxies only Prometheus `query`/`query_range` and Netwatch `/api/state` | **0.0.0.0:8800** |
+| `mc-prometheus-9090` | Time-series database, scrape every 15 s, retention 365 days, data in `data/prometheus` | 127.0.0.1:9090 |
+| `mc-node-exporter-9100` | CPU, memory, load, temperatures (hwmon), disk I/O, network, md RAID | 127.0.0.1:9100 |
+| `mc-smartctl-exporter-9633` | SMART for `sda`, `sdb`, `nvme0` (see Security) | 127.0.0.1:9633 |
+| `mc-collector-9101` | Own Python (stdlib only): per-container CPU/RAM via the read-only docker proxy, qBittorrent, AdGuard, Speedtest Tracker, Tailscale (local API socket). A failing source only sets `mc_up{source=…} 0` | 127.0.0.1:9101 |
+| `mc-web-8800` | Own Python: serves the page and vendored JS (uPlot, globe.gl, topojson), proxies only Prometheus `query`/`query_range` and Netwatch `/api/state` | **0.0.0.0:8800** |
 
 - Collector logins are in `mission-control/.env` (keys in `.env.example`).
 - Tailscale's socket is shared through `tailscale/run/` (mounted at `/var/run/tailscale`).
@@ -355,7 +357,7 @@ Root-only tasks:
 | Logins | AdGuard, qBittorrent, Uptime Kuma, Dockge, AutoBangumi and Speedtest Tracker each have their own admin account. Defaults (AutoBangumi `admin/adminadmin`, Speedtest `admin@example.com/password`) must be changed. |
 | Docker socket | Dockge has full access (root-equivalent). Home and Mission Control only get the read-only proxy (also on `127.0.0.1:2375`, NAS-local). |
 | Home | The only writes are `POST /api/attention/<id>/dismiss|ack`, which change Home's own `data/state.json`. Feed text is reduced to plain text and escaped before display. No login (LAN + tailnet only). |
-| Raw disk access | `mc-smartctl-exporter` gets exactly `/dev/sda`, `/dev/sdb`, `/dev/nvme0` with `SYS_RAWIO`/`SYS_ADMIN` to read SMART (approved 2026-11-06). Not privileged. |
+| Raw disk access | `mc-smartctl-exporter-9633` gets exactly `/dev/sda`, `/dev/sdb`, `/dev/nvme0` with `SYS_RAWIO`/`SYS_ADMIN` to read SMART (approved 2026-11-06). Not privileged. |
 | Mission Control | Prometheus, exporters and collector listen on `127.0.0.1` only; the page (:8800) exposes read-only queries, never Prometheus' admin API. Every path needs the admin login. |
 | Admin login | Home's `/admin/` and APIs, Mission Control and Netwatch refuse without the session cookie (HttpOnly, SameSite=Strict). Netwatch skips the check for requests from `127.0.0.1`, because Home and Mission Control read it over loopback. Over plain HTTP until HTTPS arrives (#6), the password and cookie travel unencrypted on the home network (Tailscale encrypts its own traffic), and other apps on the same address also receive the cookie. |
 | Glances | Its own password (`glances/data/glances.pwd`, a hash, not in git). `/api/4/status` (version only), `/docs` and `/openapi.json` (generic API description) stay open; they hold no system data, and everything else answers 401. |
@@ -372,6 +374,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-07**
 
+- **Container names** now carry their port (`autobangumi-7892`), set with `container_name`. `tailscale` has no port, and the UGOS-managed `qbittorrent-app-1` and `firefox-app-1` keep their names. CPU and memory history for AdGuard and Speedtest continues under the new names.
 - **Public summary and admin login:** `:3001` is now a plain summary for family and guests with an **Open UGOS** button; the owner's page moved to `/admin/` behind one password, which also locks Mission Control and Netwatch. Glances gets its own password.
 - **Home:** alert cards with priority order and acknowledged banners, news archive with an *Opened* tab, plain-arrow keys only, Uptime Kuma connected (5 monitors), duplicate Mission Control link removed.
 - **Home** replaces the gethomepage dashboard on :3001: pinned attention with an urgent full-screen takeover and ntfy push, a two-card news carousel (11 EN/IT feeds), episode arrivals, compact Mission Control rail, dock. Old Homepage kept behind a compose profile.

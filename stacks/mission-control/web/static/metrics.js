@@ -95,7 +95,7 @@ export const CARDS = [
       { label: "Queries · 24 h", expr: "mc_adguard_queries_24h", format: formatCount },
       { label: "Latency", expr: "1000 * mc_adguard_latency_seconds", format: formatMs },
       { label: "Top blocked", expr: "mc_adguard_top_blocked", labelOf: "domain" },
-      cpu("adguardhome"), ram("adguardhome"),
+      cpu("adguardhome-8080"), ram("adguardhome-8080"),
     ],
   },
   {
@@ -111,7 +111,7 @@ export const CARDS = [
       { label: "Download", expr: "mc_speedtest_download_bits_per_second", format: formatBitrate },
       { label: "Upload", expr: "mc_speedtest_upload_bits_per_second", format: formatBitrate },
       { label: "Ping", expr: "mc_speedtest_ping_ms", format: formatMs },
-      cpu("speedtest-tracker"), ram("speedtest-tracker"),
+      cpu("speedtest-tracker-8765"), ram("speedtest-tracker-8765"),
     ],
   },
   {

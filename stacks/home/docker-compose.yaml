@@ -4,7 +4,7 @@ services:
   home:
     build: .
     image: home:local
-    container_name: home
+    container_name: home-3001
     restart: unless-stopped
     network_mode: host
     env_file:

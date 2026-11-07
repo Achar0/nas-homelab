@@ -18,6 +18,9 @@ ssh "$NAS" 'cd /volume1/docker && find adguard homepage dockge uptime-kuma autob
 # UGREEN app-store qBittorrent (compose only)
 ssh "$NAS" 'cat /volume1/@appstore/com.ugreen.docker.qbittorrent/docker-compose.yaml' > stacks/qbittorrent/docker-compose.yaml
 
+# The NAS marks everything executable; nothing under stacks/ needs to be
+find stacks -type f -perm /111 -exec chmod 644 {} +
+
 # Safety net: refuse to continue if something looks like a secret
 # (commented-out lines are ignored)
 if grep -rniE '^[^#]*(password|passwd|secret|token|apikey)[[:space:]]*[:=][[:space:]]*[^[:space:]{"]' stacks; then

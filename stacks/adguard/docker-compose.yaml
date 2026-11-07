@@ -1,7 +1,7 @@
 services:
   adguardhome:
     image: adguard/adguardhome:latest
-    container_name: adguardhome
+    container_name: adguardhome-8080
     restart: unless-stopped
     network_mode: bridge
     ports:

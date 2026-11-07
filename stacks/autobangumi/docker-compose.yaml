@@ -1,7 +1,7 @@
 services:
   autobangumi:
     image: ghcr.io/estrellaxd/auto_bangumi:latest
-    container_name: autobangumi
+    container_name: autobangumi-7892
     restart: unless-stopped
     network_mode: bridge
     ports:

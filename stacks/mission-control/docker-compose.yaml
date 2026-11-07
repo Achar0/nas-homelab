@@ -3,7 +3,7 @@
 services:
   prometheus:
     image: prom/prometheus:v3.5.0
-    container_name: mc-prometheus
+    container_name: mc-prometheus-9090
     restart: unless-stopped
     network_mode: host
     user: "1000:10"
@@ -18,7 +18,7 @@ services:
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
-    container_name: mc-node-exporter
+    container_name: mc-node-exporter-9100
     restart: unless-stopped
     network_mode: host
     pid: host
@@ -33,7 +33,7 @@ services:
   # Drive health. Needs raw access to exactly these drives (approved 2026-11-06); not privileged.
   smartctl-exporter:
     image: prometheuscommunity/smartctl-exporter:v0.14.0
-    container_name: mc-smartctl-exporter
+    container_name: mc-smartctl-exporter-9633
     restart: unless-stopped
     network_mode: host
     user: root
@@ -48,7 +48,7 @@ services:
   collector:
     build: ./collector
     image: mc-collector:local
-    container_name: mc-collector
+    container_name: mc-collector-9101
     restart: unless-stopped
     network_mode: host
     env_file: .env                 # service logins (not in git, see .env.example)
@@ -65,7 +65,7 @@ services:
   web:
     build: ./web
     image: mc-web:local
-    container_name: mc-web
+    container_name: mc-web-8800
     restart: unless-stopped
     network_mode: host
     env_file: ../admin-auth.env       # ADMIN_PASSWORD_HASH, SESSION_SECRET (not in git)

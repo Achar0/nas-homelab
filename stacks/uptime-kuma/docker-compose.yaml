@@ -1,7 +1,7 @@
 services:
   uptime-kuma:
     image: louislam/uptime-kuma:2
-    container_name: uptime-kuma
+    container_name: uptime-kuma-3002
     restart: unless-stopped
     network_mode: bridge
     ports:
