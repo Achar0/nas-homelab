@@ -68,12 +68,13 @@ services:
     container_name: mc-web-8800
     restart: unless-stopped
     network_mode: host
-    env_file: ../admin-auth.env       # ADMIN_PASSWORD_HASH, SESSION_SECRET (not in git)
     environment:
       PORT: 8800
       PROM_URL: http://127.0.0.1:9090
       NETWATCH_URL: http://127.0.0.1:8790
+      HOME_URL: http://127.0.0.1:3001
       DATA_DIR: /data
     volumes:
       - ./data/vendor:/data/vendor      # pinned JS libraries, downloaded on first start
       - ./web/static:/app/static:ro     # page files, editable without a rebuild
+      - ../admin-auth:/admin-auth:ro    # admin login (not in git); Home writes it

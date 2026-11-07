@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>Settings</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin/settings.css">
+</head>
+<body>
+  <div class="settings">
+    <header class="set-head">
+      <h1>Settings</h1>
+      <p><a href="/admin/">Home</a> · <a id="mission" target="_blank" rel="noopener">Mission Control</a> · <button class="logout" id="logout">Log out</button></p>
+    </header>
+    <p class="notice" id="notice" role="alert" hidden></p>
+    <div class="set-body">
+      <nav class="set-nav" id="nav" aria-label="Settings sections"></nav>
+      <main id="pane"></main>
+    </div>
+  </div>
+  <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+  <script type="module" src="/admin/settings.js"></script>
+</body>
+</html>

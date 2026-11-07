@@ -9,8 +9,8 @@ resolved for 24 h; if it comes back later it is a new incident (alerts and pushe
 """
 KEEP_RESOLVED = 24 * 3600
 NETWATCH_ACTIVE = 300          # a Netwatch entry seen in the last 5 min counts as ongoing
-INTRUSION_URGENT_AFTER = 180   # attack must persist 3 min before it takes over the screen
-KUMA_URGENT_AFTER = 120        # service down > 2 min
+# What the owner can change in Settings (see settings.py for the allowed ranges)
+DEFAULT_RULES = {"free_pct": 15, "service_down_min": 2, "intrusion_min": 3, "hot_c": 50, "slow_pct": 50}
 PUSH_COOLDOWN = 3600           # the same problem pushes at most once an hour (flapping services)
 PUSH_CAP_PER_HOUR = 10         # and never more than 10 urgent pushes an hour in total (scans from many IPs)
 LEVELS = {"urgent": 0, "normal": 1}
@@ -23,7 +23,7 @@ def _cond(cid, src, level, title, detail, app, since=None, urgent_after=None, li
             "since": since, "urgent_after": urgent_after, "live": live}
 
 
-def _netwatch(nw, now):
+def _netwatch(nw, now, rules):
     out = []
     for it in nw.get("items") or []:
         if not it.get("flag") or it.get("scope") != "internet":
@@ -37,20 +37,20 @@ def _netwatch(nw, now):
             # timed from when *we* first see it ongoing: Netwatch's `first` spans 24 h and would
             # turn an old sighting plus a new one into a fake 3-hour attack
             out.append(_cond(f"intrusion:{it['ip']}", "netwatch", "normal", "Possible intrusion", detail, "netwatch",
-                             urgent_after=INTRUSION_URGENT_AFTER, live=bool(it.get("live"))))
+                             urgent_after=rules["intrusion_min"] * 60, live=bool(it.get("live"))))
         else:
             out.append(_cond(f"flagged-out:{it['ip']}", "netwatch", "normal", "Connection to a flagged address",
                              detail, "netwatch"))
     return out
 
 
-def _kuma(kuma):
+def _kuma(kuma, now, rules):
     return [_cond(f"kuma-down:{name}", "kuma", "normal", f"{name} is down", "Uptime Kuma reports it unreachable",
-                  "kuma", urgent_after=KUMA_URGENT_AFTER)
+                  "kuma", urgent_after=rules["service_down_min"] * 60)
             for name, status in kuma.items() if status == 0]
 
 
-def _prom(p):
+def _prom(p, now, rules):
     out = []
     if p.get("md_active") is not None and p.get("md_required") and p["md_active"] < p["md_required"]:
         out.append(_cond("raid", "prom", "urgent", "RAID degraded",
@@ -59,23 +59,23 @@ def _prom(p):
         if ok == 0:
             out.append(_cond(f"smart:{dev}", "prom", "urgent", f"Drive {dev} failing", "SMART health check failed", "mission"))
     for dev, t in (p.get("drive_temp") or {}).items():
-        if t is not None and t > 50:
+        if t is not None and t > rules["hot_c"]:
             out.append(_cond(f"hot:{dev}", "prom", "normal", f"Drive {dev} running hot", f"{round(t)} °C", "mission"))
-    if p.get("free_ratio") is not None and p["free_ratio"] < 0.15:
+    if p.get("free_ratio") is not None and p["free_ratio"] * 100 < rules["free_pct"]:
         out.append(_cond("space", "prom", "normal", "Free space low", f"{round(p['free_ratio'] * 100)}% free on the RAID volume", "mission"))
     last, med = p.get("speed_last"), p.get("speed_median")
-    if last and med and last < 0.5 * med:
+    if last and med and last < rules["slow_pct"] / 100 * med:
         out.append(_cond("speed", "prom", "normal", "Slow internet",
                          f"Last speed test {round(last / 1e6)} Mb/s, usually {round(med / 1e6)} Mb/s", "speedtest"))
     return out
 
 
-def _restarts(r):
+def _restarts(r, now, rules):
     return [_cond(f"restarts:{name}", "docker", "urgent", f"{name} keeps restarting", f"{n} restarts in 10 min", "dockge")
             for name, n in r.items() if n >= 3]
 
 
-def _missing(ab):
+def _missing(ab, now, rules):
     return [_cond(f"missing:{m['show']} {m['episode']}", "ab", "normal", "Episode not downloaded",
                   f"{m['show']} {m['episode']} appeared in the feed but hasn't downloaded", "qbittorrent")
             for m in ab]
@@ -85,7 +85,7 @@ RULES = {"netwatch": _netwatch, "kuma": _kuma, "prom": _prom, "restarts": _resta
 SRC_OF_INPUT = {"netwatch": "netwatch", "kuma": "kuma", "prom": "prom", "restarts": "docker", "ab_missing": "ab"}
 
 
-def conditions(inputs, now):
+def conditions(inputs, now, rules=DEFAULT_RULES):
     """What is wrong right now, whatever has been dismissed: ({id: condition}, sources that answered)."""
     active, known_srcs = {}, set()
     for key, rule in RULES.items():
@@ -93,14 +93,14 @@ def conditions(inputs, now):
         if data is None:
             continue   # source unavailable: neither raise nor resolve its incidents
         known_srcs.add(SRC_OF_INPUT[key])
-        for c in rule(data, now) if key == "netwatch" else rule(data):
+        for c in rule(data, now, rules):
             active[c["id"]] = c
     return active, known_srcs
 
 
-def evaluate(inputs, state, now):
+def evaluate(inputs, state, now, rules=DEFAULT_RULES):
     incidents = state.setdefault("incidents", {})
-    active, known_srcs = conditions(inputs, now)
+    active, known_srcs = conditions(inputs, now, rules)
 
     pushes = []
     last_push = state.setdefault("last_push", {})

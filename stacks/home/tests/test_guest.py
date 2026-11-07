@@ -5,6 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import arrivals  # noqa: E402
+import attention  # noqa: E402
 import guest  # noqa: E402
 
 NOW = 1_800_000_000
@@ -166,6 +167,18 @@ class Summary(unittest.TestCase):
     def test_no_inputs_at_all(self):
         s = guest.summary(None, {"arrived": [], "downloading": []}, NOW, 0)
         self.assertEqual(s["status"]["title"], "Status unavailable")
+
+
+class FollowsTheRules(unittest.TestCase):
+    def test_guest_status_uses_the_same_rule(self):
+        inputs = {"kuma": {"AdGuard": 1}, "restarts": {},
+                  "prom": {"md_active": 2, "md_required": 2, "smart_status": {"sda": 1}, "drive_temp": {"sda": 40},
+                           "free_ratio": 0.18, "speed_last": 900e6, "speed_median": 920e6}}
+        rules = {**attention.DEFAULT_RULES, "free_pct": 20}
+        self.assertEqual(guest.status(inputs, 100, 100)["state"], "ok")
+        self.assertEqual(guest.status(inputs, 100, 100, rules)["title"], "Storage needs attention")
+        self.assertEqual(guest.summary(inputs, {}, 100, 100, rules)["status"]["title"], "Storage needs attention")
+
 
 
 if __name__ == "__main__":

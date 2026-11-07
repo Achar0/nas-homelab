@@ -27,6 +27,7 @@ DATA = os.environ.get("DATA_DIR", "/data")
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 HOME = (float(os.environ.get("HOME_LAT", "45.46")), float(os.environ.get("HOME_LON", "9.19")))
 TORRENT_PORT = int(os.environ.get("TORRENT_PORT", "6888"))
+HOME_URL = os.environ.get("HOME_URL", "http://127.0.0.1:3001")
 NTFY_URL = os.environ.get("NTFY_URL", "")  # e.g. https://ntfy.sh/<topic>; empty = no phone alerts
 POLL_S = 5
 HISTORY_S = 24 * 3600
@@ -246,9 +247,18 @@ def poll():
 alert_times = []  # timestamps of sent alerts, for the hourly cap
 
 
+def push_enabled():
+    """The phone switch in Home's Settings. If Home can't say, keep alerting."""
+    try:
+        with urllib.request.urlopen(HOME_URL + "/api/internal/layout", timeout=2) as r:
+            return json.load(r).get("push", True) is not False
+    except Exception:  # noqa: BLE001 - whatever went wrong, an alert must not be lost
+        return True
+
+
 def send_alerts(items):
     """One ntfy notification per poll listing the new red flags; max 10 per hour."""
-    if not NTFY_URL:
+    if not NTFY_URL or not push_enabled():
         return
     now = time.time()
     alert_times[:] = [t for t in alert_times if now - t < 3600]

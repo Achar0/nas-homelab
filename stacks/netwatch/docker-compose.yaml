@@ -7,9 +7,9 @@ services:
     network_mode: host       # read the NAS's own connection table (/proc/net/tcp)
     env_file:
       - .env                 # NTFY_URL (private ntfy topic for phone alerts, not in git)
-      - ../admin-auth.env    # ADMIN_PASSWORD_HASH, SESSION_SECRET (not in git)
     environment:
       PORT: 8790
+      HOME_URL: http://127.0.0.1:3001
       HOME_LAT: "45.46"      # map "home" point (Milan)
       HOME_LON: "9.19"
       TORRENT_PORT: 6888     # incoming connections here are normal (peers)
@@ -17,3 +17,4 @@ services:
     volumes:
       - ./data:/data         # GeoIP db, blocklists, 24 h history
       - ./static:/app/static:ro   # page files, editable without a rebuild
+      - ../admin-auth:/admin-auth:ro   # admin login (not in git); Home writes it

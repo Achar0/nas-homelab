@@ -21,11 +21,25 @@ PW = "correct horse"
 PW_HASH = auth.hash_password(PW)
 
 
+AUTH_FILE = os.path.join(tempfile.mkdtemp(), "auth.json")
+
+
+def write_auth(pw_hash, key):
+    os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+    with open(AUTH_FILE, "w") as f:
+        json.dump({"hash": pw_hash, "key": key}, f)
+
+
+def remove_auth():
+    os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+    if os.path.exists(AUTH_FILE):
+        os.remove(AUTH_FILE)
+
+
 class Base(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        os.environ["SESSION_SECRET"] = KEY
-        os.environ["ADMIN_PASSWORD_HASH"] = PW_HASH
+        write_auth(PW_HASH, KEY)
         cls.httpd = server.make_server(0)
         cls.port = cls.httpd.server_address[1]
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
@@ -34,8 +48,7 @@ class Base(unittest.TestCase):
     def tearDownClass(cls):
         cls.httpd.shutdown()
         cls.httpd.server_close()
-        os.environ.pop("SESSION_SECRET", None)
-        os.environ.pop("ADMIN_PASSWORD_HASH", None)
+        remove_auth()
 
     def setUp(self):
         server.THROTTLE.reset(HOST)
@@ -43,6 +56,8 @@ class Base(unittest.TestCase):
     def call(self, path, method="GET", cookie=None, body=None):
         c = http.client.HTTPConnection(HOST, self.port, timeout=10)
         headers = {"Cookie": cookie} if cookie else {}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
         c.request(method, path, body=body, headers=headers)
         r = c.getresponse()
         data = r.read()
@@ -204,13 +219,102 @@ class Login(Base):
         self.assertIn("Max-Age=0", headers["Set-Cookie"])
 
 
+class SettingsPage(Base):
+    def test_settings_page_needs_login(self):
+        for path in ("/admin/settings", "/admin/settings/", "/admin/settings.html", "/admin/settings.js", "/admin/settings.css",
+                     "/%61dmin/settings", "/x/../admin/settings.html"):
+            status, headers, data = self.call(path)
+            self.assertEqual(status, 302, path)
+            self.assertIn("/?login=1&next=", headers["Location"], path)
+            self.assertEqual(data, b"", path)
+
+    def test_settings_page_served_when_logged_in(self):
+        for path in ("/admin/settings", "/admin/settings/"):
+            status, _, data = self.call(path, cookie=self.cookie())
+            self.assertEqual(status, 200, path)
+            self.assertIn(b"settings.js", data)
+        self.assertEqual(self.call("/admin/settings.js", cookie=self.cookie())[0], 200)
+
+    def test_admin_page_links_to_settings(self):
+        self.assertIn(b'href="/admin/settings"', self.call("/admin/", cookie=self.cookie())[2])
+
+
+class Account(Base):
+    def setUp(self):
+        super().setUp()
+        write_auth(PW_HASH, KEY)
+        self.addCleanup(write_auth, PW_HASH, KEY)
+        real = auth.save
+        self.addCleanup(setattr, auth, "save", real)
+
+    def change(self, cookie, current=PW, new="a new password"):
+        return self.call("/api/account/password", "POST", cookie=cookie, body=json.dumps({"current": current, "new": new}))
+
+    def ok(self, cookie):
+        return self.call("/api/attention", cookie=cookie)[0] == 200
+
+    def test_account_routes_need_login(self):
+        self.assertEqual(self.change(None)[0], 401)
+        self.assertEqual(self.call("/api/account/logout-everywhere", "POST", body="{}")[0], 401)
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_change_keeps_this_session_and_ends_others(self):
+        a, b = self.cookie(), self.cookie()
+        status, headers, _ = self.change(a)
+        self.assertEqual(status, 200)
+        new_cookie = headers["Set-Cookie"].split(";")[0]
+        self.assertTrue(self.ok(new_cookie))
+        self.assertFalse(self.ok(b))
+        self.assertTrue(auth.login_ok("a new password"))
+        self.assertFalse(auth.login_ok(PW))
+
+    def test_change_keeps_remember_setting(self):
+        short = self.cookie()   # expires in 60 s, so not "remember"
+        self.assertNotIn("Max-Age", self.change(short)[1]["Set-Cookie"])
+        write_auth(PW_HASH, KEY)
+        long = self.cookie(time.time() + 20 * 86400)
+        self.assertIn("Max-Age=2592000", self.change(long)[1]["Set-Cookie"])
+
+    def test_wrong_current_is_throttled_like_login(self):
+        cookie = self.cookie()
+        for _ in range(5):
+            status, _, data = self.change(cookie, current="wrong")
+            self.assertEqual(status, 403)
+        status, _, data = self.change(cookie, current="wrong")
+        self.assertEqual(status, 429)
+        self.assertIn("retry_after", json.loads(data))
+        self.assertEqual(self.change(cookie)[0], 429)   # even with the right one, until the wait is over
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_short_new_password_400(self):
+        self.assertEqual(self.change(self.cookie(), new="short")[0], 400)
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_wrong_types_400(self):
+        status, _, _ = self.call("/api/account/password", "POST", cookie=self.cookie(), body=json.dumps({"current": 1, "new": 2}))
+        self.assertEqual(status, 400)
+
+    def test_logout_everywhere_ends_this_session_too(self):
+        cookie = self.cookie()
+        status, headers, _ = self.call("/api/account/logout-everywhere", "POST", cookie=cookie, body="{}")
+        self.assertEqual(status, 200)
+        self.assertIn("Max-Age=0", headers["Set-Cookie"])
+        self.assertFalse(self.ok(cookie))
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_read_only_or_missing_auth_file_says_so(self):
+        auth.save = lambda *a: (_ for _ in ()).throw(OSError("read-only"))
+        self.assertEqual(self.change(self.cookie())[0], 503)
+        self.assertEqual(self.call("/api/account/logout-everywhere", "POST", cookie=self.cookie(), body="{}")[0], 503)
+        self.assertTrue(auth.login_ok(PW))
+
+
 class NotConfigured(unittest.TestCase):
     """Missing settings: login refused, locked routes stay locked, guests unaffected."""
 
     @classmethod
     def setUpClass(cls):
-        os.environ.pop("SESSION_SECRET", None)
-        os.environ.pop("ADMIN_PASSWORD_HASH", None)
+        remove_auth()
         cls.httpd = server.make_server(0)
         cls.port = cls.httpd.server_address[1]
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()

@@ -3,8 +3,10 @@
 The same file is copied into stacks/home, stacks/mission-control/web and stacks/netwatch
 (tests/test_auth.py in Home checks that the copies match). Standard library only.
 
-ADMIN_PASSWORD_HASH and SESSION_SECRET come from the environment, read on every call.
-If either is missing or invalid, every login and session is refused (fail closed).
+The password hash and session key live in one JSON file ({"hash": ..., "key": ...}, path in
+ADMIN_AUTH_FILE), checked on every call, so a change reaches all three services without a restart.
+Home can write it; the other two mount it read-only.
+If it is missing or invalid, every login and session is refused (fail closed).
 Variable names avoid the words the secret scan in scripts/sync-from-nas.sh looks for.
 """
 import hashlib
@@ -14,6 +16,7 @@ import math
 import os
 import re
 import secrets
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -22,6 +25,8 @@ COOKIE = "nas_admin"
 REMEMBER_S = 30 * 86400
 SESSION_S = 12 * 3600
 MIN_KEY_LEN = 32
+MIN_PASSWORD_LEN = 8
+DEFAULT_AUTH_FILE = "/admin-auth/auth.json"
 LOGIN_PORT = 3001
 NEXT_PORTS = (3001, 8800, 8790)
 DEFAULT_NEXT = "/admin/"
@@ -87,19 +92,85 @@ def check_token(key, tok, now):
     return now < expires
 
 
+def auth_file():
+    return os.environ.get("ADMIN_AUTH_FILE", DEFAULT_AUTH_FILE)
+
+
+_cache = {"stamp": None, "creds": {}}
+_cache_lock = threading.Lock()
+
+
+def _read(path):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    ok = isinstance(data, dict) and isinstance(data.get("hash"), str) and isinstance(data.get("key"), str)
+    return data if ok else {}
+
+
+def _creds():
+    """The file's contents, re-read only when it has changed. Missing or invalid gives {}."""
+    path = auth_file()
+    try:
+        st = os.stat(path)
+    except OSError:
+        return {}
+    stamp = (path, st.st_ino, st.st_mtime_ns, st.st_ctime_ns, st.st_size)   # ctime: chmod and chown count
+    with _cache_lock:
+        if _cache["stamp"] != stamp:
+            creds = _read(path)
+            _cache.update(stamp=stamp if creds else None, creds=creds)   # a failed read is tried again next time
+        return _cache["creds"]
+
+
 def _key():
-    return os.environ.get("SESSION_SECRET", "")
+    return _creds().get("key", "")
+
+
+def _stored_hash():
+    return _creds().get("hash", "")
 
 
 def configured():
-    return len(_key()) >= MIN_KEY_LEN and _parse_hash(os.environ.get("ADMIN_PASSWORD_HASH", "")) is not None
+    return len(_key()) >= MIN_KEY_LEN and _parse_hash(_stored_hash()) is not None
+
+
+def save(pw_hash, key):
+    """Replace the file atomically, mode 600. A failure leaves the old file in place."""
+    path = auth_file()
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".part")   # mkstemp creates it as 600
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"hash": pw_hash, "key": key}, f)
+        os.replace(tmp, path)
+    except OSError:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+
+
+def change_password(current, new):
+    """False if the current password is wrong or the new one too short. Also logs out every session."""
+    if len(new) < MIN_PASSWORD_LEN or not login_ok(current):
+        return False
+    save(hash_password(new), secrets.token_hex(32))
+    return True
+
+
+def log_out_everywhere():
+    """A new key makes every existing session invalid, on all three services."""
+    if not configured():
+        raise ValueError("no valid login to change")
+    save(_stored_hash(), secrets.token_hex(32))
 
 
 def startup_check(log):
     """Say at start-up why every login would be refused; never the values themselves."""
     if configured():
         return True
-    log("admin login is off: ADMIN_PASSWORD_HASH or SESSION_SECRET is missing or invalid, everything locked stays locked")
+    log(f"admin login is off: {auth_file()} is missing or invalid, everything locked stays locked")
     return False
 
 
@@ -116,13 +187,21 @@ def session_ok(cookie_header, now):
 
 
 def login_ok(pw):
-    return configured() and verify_password(pw, os.environ.get("ADMIN_PASSWORD_HASH", ""))
+    return configured() and verify_password(pw, _stored_hash())
 
 
 def login_cookie(remember, now):
     expires = int(now) + (REMEMBER_S if remember else SESSION_S)
     value = f"{COOKIE}={make_token(_key(), expires)}; HttpOnly; SameSite=Strict; Path=/"
     return value + f"; Max-Age={REMEMBER_S}" if remember else value
+
+
+def was_remembered(cookie_header, now):
+    """True if this session's expiry only makes sense for "remember this device"."""
+    try:
+        return int((_cookie_value(cookie_header) or "").split(".")[0]) - now > SESSION_S
+    except ValueError:
+        return False
 
 
 def logout_cookie():

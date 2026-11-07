@@ -5,12 +5,14 @@ import tempfile
 import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["DATA_DIR"] = tempfile.mkdtemp()
 os.environ["NTFY_URL"] = ""
+AUTH_FILE = os.path.join(tempfile.mkdtemp(), "auth.json")
 import auth  # noqa: E402
 import server  # noqa: E402
 
@@ -39,6 +41,38 @@ class Tick(unittest.TestCase):
             server.save_state, server.send_push = orig_save, orig_push
         self.assertEqual(sent, ["RAID degraded"])
         self.assertEqual(server.LATEST["attention"]["urgent"]["id"], "raid")
+
+
+class PhoneSwitch(unittest.TestCase):
+    def setUp(self):
+        self.sent = []
+        real, reset = server.send_push, dict(server.STATE)
+        server.send_push = lambda title, detail: self.sent.append(title)
+        self.addCleanup(setattr, server, "send_push", real)
+        server.STATE.clear()
+        self.addCleanup(lambda: (server.STATE.clear(), server.STATE.update(reset)))
+        self.addCleanup(lambda: server.STORE.update(lambda s: s["alerts"].update(push=True)))
+
+    def gather(self, now):
+        return {"prom": {"md_active": 1, "md_required": 2}}, []
+
+    def test_push_on_sends(self):
+        server.attention_tick(self.gather)
+        self.assertEqual(self.sent, ["RAID degraded"])
+
+    def test_push_off_sends_nothing_and_never_sends_later(self):
+        server.STORE.update(lambda s: s["alerts"].update(push=False))
+        server.attention_tick(self.gather)
+        self.assertEqual(self.sent, [])
+        server.STORE.update(lambda s: s["alerts"].update(push=True))
+        server.attention_tick(self.gather)
+        self.assertEqual(self.sent, [])
+
+    def test_ticks_use_the_stored_numbers(self):
+        server.STORE.update(lambda s: s["alerts"].update(hot_c=40))
+        self.addCleanup(lambda: server.STORE.update(lambda s: s["alerts"].update(hot_c=50)))
+        server.attention_tick(lambda now: ({"prom": {"drive_temp": {"sda": 45}}}, []))
+        self.assertEqual([i["id"] for i in server.LATEST["attention"]["items"]], ["hot:sda"])
 
 
 class Limits(unittest.TestCase):
@@ -84,6 +118,60 @@ class Limits(unittest.TestCase):
             server.get_limited(self.base + "/slow", limit=100_000, deadline=1)
 
 
+class WholeFetchDeadline(unittest.TestCase):
+    def serve(self, handler):
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{srv.server_address[1]}/"
+
+    def test_redirect_chain_can_not_outlast_the_deadline(self):
+        class Slow(BaseHTTPRequestHandler):
+            def do_GET(self):
+                time.sleep(0.4)
+                self.send_response(302)
+                self.send_header("Location", f"/{time.time()}")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        start = time.monotonic()
+        with self.assertRaises(TimeoutError):
+            server.get_limited(self.serve(Slow), deadline=1)
+        self.assertLess(time.monotonic() - start, 1.5)
+
+    def test_slow_headers_then_gap_can_not_outlast_the_deadline(self):
+        class Slow(BaseHTTPRequestHandler):
+            def do_GET(self):
+                time.sleep(0.7)
+                self.send_response(200)
+                self.send_header("Content-Length", "10")
+                self.end_headers()
+                self.wfile.flush()
+                time.sleep(0.8)
+                self.wfile.write(b"0123456789")
+
+            def log_message(self, *a):
+                pass
+        start = time.monotonic()
+        with self.assertRaises(TimeoutError):
+            server.get_limited(self.serve(Slow), deadline=1)
+        self.assertLess(time.monotonic() - start, 1.3)
+
+    def test_normal_fetch_still_returns_the_data(self):
+        class Fine(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *a):
+                pass
+        self.assertEqual(server.get_limited(self.serve(Fine)), b"ok")
+
+
 class Api(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -97,8 +185,9 @@ class Api(unittest.TestCase):
         cls.httpd.server_close()
 
     def req(self, path, method="GET"):
-        os.environ["SESSION_SECRET"] = KEY
-        os.environ["ADMIN_PASSWORD_HASH"] = "scrypt:2:1:1:00:00"
+        os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+        with open(AUTH_FILE, "w") as f:
+            json.dump({"hash": "scrypt:2:1:1:00:00", "key": KEY}, f)
         cookie = f"nas_admin={auth.make_token(KEY, time.time() + 60)}"
         r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None,
                                    headers={"Cookie": cookie})
@@ -114,6 +203,12 @@ class Api(unittest.TestCase):
                                                      "resolved_at": None, "level": "normal", "title": "Free space low",
                                                      "detail": "10% free", "src": "prom", "app": "mission"}}})
         server.LATEST["attention"] = {"items": [], "urgent": None, "sources_down": []}
+
+    def test_attention_api_reports_push_state(self):
+        self.assertIs(self.req("/api/attention")[1]["push"], True)
+        server.STORE.update(lambda s: s["alerts"].update(push=False))
+        self.addCleanup(lambda: server.STORE.update(lambda s: s["alerts"].update(push=True)))
+        self.assertIs(self.req("/api/attention")[1]["push"], False)
 
     def test_dismiss_persists(self):
         code, _ = self.req("/api/attention/space/dismiss", "POST")

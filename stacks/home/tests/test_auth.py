@@ -1,11 +1,15 @@
+import json
 import os
+import stat
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 import auth  # noqa: E402
 
+AUTH_FILE = os.path.join(tempfile.mkdtemp(), "auth.json")
 KEY = "k" * 64
 HOST = "192.168.1.14"
 
@@ -48,17 +52,99 @@ class Tokens(unittest.TestCase):
 
 class Session(unittest.TestCase):
     def setUp(self):
-        self.saved = {k: os.environ.pop(k, None) for k in ("SESSION_SECRET", "ADMIN_PASSWORD_HASH")}
+        self.saved = {k: os.environ.pop(k, None) for k in ("SESSION_SECRET", "ADMIN_PASSWORD_HASH", "ADMIN_AUTH_FILE")}
+        os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+        self.clear()
 
     def tearDown(self):
+        self.clear()
         for k, v in self.saved.items():
             os.environ.pop(k, None)
             if v is not None:
                 os.environ[k] = v
 
+    def clear(self):
+        if os.path.exists(AUTH_FILE):
+            os.remove(AUTH_FILE)
+
+    def write(self, pw_hash, key):
+        with open(AUTH_FILE, "w") as f:
+            json.dump({"hash": pw_hash, "key": key}, f)
+
     def set_up_env(self, key=KEY):
-        os.environ["SESSION_SECRET"] = key
+        self.write(auth.hash_password("pw"), key)
+
+    def test_missing_file_refuses_everything(self):
+        self.assertFalse(auth.configured())
+        self.assertFalse(auth.login_ok("pw"))
+        self.assertFalse(auth.session_ok(f"nas_admin={auth.make_token(KEY, 1000)}", 0))
+
+    def test_invalid_json_refuses_even_with_env_values(self):
         os.environ["ADMIN_PASSWORD_HASH"] = auth.hash_password("pw")
+        os.environ["SESSION_SECRET"] = KEY
+        with open(AUTH_FILE, "w") as f:
+            f.write("{not json")
+        self.assertFalse(auth.login_ok("pw"))
+        self.assertFalse(auth.session_ok(f"nas_admin={auth.make_token(KEY, 1000)}", 0))
+
+    def test_json_of_the_wrong_shape_refuses(self):
+        for raw in ('[1]', '{"hash": 1, "key": 2}', '"x"', 'null'):
+            with open(AUTH_FILE, "w") as f:
+                f.write(raw)
+            self.assertFalse(auth.configured(), raw)
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read anything")
+    def test_fixing_permissions_is_noticed(self):
+        self.set_up_env()
+        self.assertTrue(auth.configured())
+        os.chmod(AUTH_FILE, 0)
+        auth._cache.update(stamp=None, creds={})   # as after a restart while the file is unreadable
+        self.assertFalse(auth.configured())
+        os.chmod(AUTH_FILE, 0o600)
+        self.assertTrue(auth.configured())
+
+    def test_short_key_refuses(self):
+        self.set_up_env(key="k" * 31)
+        self.assertFalse(auth.configured())
+
+    def test_replaced_file_of_same_size_is_seen(self):
+        other = "o" * len(KEY)
+        self.set_up_env()
+        self.assertTrue(auth.session_ok(f"nas_admin={auth.make_token(KEY, 1000)}", 0))
+        auth.save(auth.hash_password("pw"), other)
+        self.assertFalse(auth.session_ok(f"nas_admin={auth.make_token(KEY, 1000)}", 0))
+        self.assertTrue(auth.session_ok(f"nas_admin={auth.make_token(other, 1000)}", 0))
+
+    def test_change_password(self):
+        self.set_up_env()
+        old = f"nas_admin={auth.make_token(KEY, 1000)}"
+        self.assertFalse(auth.change_password("wrong", "newpassword"))
+        self.assertFalse(auth.change_password("pw", "short"))
+        self.assertTrue(auth.session_ok(old, 0))
+        self.assertTrue(auth.change_password("pw", "newpassword"))
+        self.assertTrue(auth.login_ok("newpassword"))
+        self.assertFalse(auth.login_ok("pw"))
+        self.assertFalse(auth.session_ok(old, 0))
+
+    def test_log_out_everywhere_keeps_password_changes_key(self):
+        self.set_up_env()
+        old = f"nas_admin={auth.make_token(KEY, 1000)}"
+        auth.log_out_everywhere()
+        self.assertTrue(auth.login_ok("pw"))
+        self.assertTrue(auth.configured())
+        self.assertFalse(auth.session_ok(old, 0))
+
+    def test_saved_file_is_mode_600(self):
+        auth.save(auth.hash_password("pw"), KEY)
+        self.assertEqual(stat.S_IMODE(os.stat(AUTH_FILE).st_mode), 0o600)
+
+    def test_was_remembered(self):
+        self.set_up_env()
+        long = auth.login_cookie(True, 1000).split(";")[0]
+        short = auth.login_cookie(False, 1000).split(";")[0]
+        self.assertTrue(auth.was_remembered(long, 1000))
+        self.assertFalse(auth.was_remembered(short, 1000))
+        self.assertFalse(auth.was_remembered(None, 1000))
 
     def test_session_ok_reads_the_cookie_among_others(self):
         self.set_up_env()
@@ -79,8 +165,7 @@ class Session(unittest.TestCase):
         self.assertFalse(auth.configured())
 
     def test_fails_closed_with_invalid_hash(self):
-        self.set_up_env()
-        os.environ["ADMIN_PASSWORD_HASH"] = "nonsense"
+        self.write("nonsense", KEY)
         self.assertFalse(auth.configured())
 
     def test_configured(self):
@@ -90,10 +175,10 @@ class Session(unittest.TestCase):
 
     def test_startup_check_says_why_without_the_values(self):
         lines = []
-        os.environ["SESSION_SECRET"] = "short-value"
+        self.write("nonsense", "short-value")
         self.assertFalse(auth.startup_check(lines.append))
         self.assertEqual(len(lines), 1)
-        self.assertIn("ADMIN_PASSWORD_HASH", lines[0])
+        self.assertIn(AUTH_FILE, lines[0])
         self.assertNotIn("short-value", lines[0])
 
     def test_startup_check_is_quiet_when_all_is_well(self):

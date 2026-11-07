@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoRefresh } from "./lib.js";
+import { autoRefresh, applyLayout } from "./lib.js";
 import { RANGES, rateWindow, formatBytes, formatBitrate, formatPercent, formatTemp, summarize, toSeries } from "./lib.js";
 
 test("ranges", () => {
@@ -76,4 +76,11 @@ test("esc neutralises markup", () => {
   assert.equal(esc("it's"), "it&#39;s");
   assert.equal(esc(null), "");
   assert.equal(esc(42), "42");
+});
+
+test("applyLayout follows order, hides, appends missing, ignores unknown", () => {
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const ids = (l) => l.map((x) => x.id);
+  assert.deepEqual(ids(applyLayout(items, [{ id: "c", show: true }, { id: "b", show: false }, { id: "zzz", show: true }])), ["c", "a"]);
+  assert.deepEqual(ids(applyLayout(items, null)), ["a", "b", "c"]);
 });

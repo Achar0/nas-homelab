@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { esc, formatAgo, step, visibleCount, greeting, fmtTB, fmtMbps, otherLabel } from "./lib.js";
+import { esc, formatAgo, step, visibleCount, greeting, fmtTB, fmtMbps, otherLabel, applyLayout, moveItem } from "./lib.js";
 
 test("step clamps at both ends", () => {
   assert.equal(step(0, -1, 10), 0);
@@ -61,4 +61,28 @@ test("otherLabel", () => {
   assert.equal(otherLabel(0), "");
   assert.equal(otherLabel(1), "1 other download");
   assert.equal(otherLabel(3), "3 other downloads");
+});
+
+const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+const ids = (list) => list.map((x) => x.id);
+
+test("applyLayout follows order, hides, appends missing, ignores unknown", () => {
+  assert.deepEqual(ids(applyLayout(items, [{ id: "c", show: true }, { id: "a", show: true }])), ["c", "a", "b"]);
+  assert.deepEqual(ids(applyLayout(items, [{ id: "b", show: false }, { id: "c", show: true }, { id: "a", show: true }])), ["c", "a"]);
+  assert.deepEqual(ids(applyLayout(items, [{ id: "zzz", show: true }])), ["a", "b", "c"]);
+});
+
+test("applyLayout without an order keeps the defaults", () => {
+  assert.deepEqual(ids(applyLayout(items, null)), ["a", "b", "c"]);
+  assert.deepEqual(ids(applyLayout(items, undefined)), ["a", "b", "c"]);
+});
+
+test("moveItem moves within bounds and ignores out-of-range", () => {
+  assert.deepEqual(moveItem(["a", "b", "c"], 0, 2), ["b", "c", "a"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
+  assert.deepEqual(moveItem(["a", "b"], 0, 5), ["a", "b"]);
+  assert.deepEqual(moveItem(["a", "b"], -1, 0), ["a", "b"]);
+  const original = ["a", "b"];
+  moveItem(original, 0, 1);
+  assert.deepEqual(original, ["a", "b"]);   // doesn't change its input
 });

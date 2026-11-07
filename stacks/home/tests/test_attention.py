@@ -9,9 +9,9 @@ NOW = 1_800_000_000
 EMPTY = {"netwatch": None, "kuma": None, "prom": None, "restarts": None, "ab_missing": None}
 
 
-def run(inputs, state=None, now=NOW):
+def run(inputs, state=None, now=NOW, rules=attention.DEFAULT_RULES):
     state = {} if state is None else state
-    items, urgent, pushes = attention.evaluate({**EMPTY, **inputs}, state, now)
+    items, urgent, pushes = attention.evaluate({**EMPTY, **inputs}, state, now, rules)
     return items, urgent, pushes, state
 
 
@@ -222,6 +222,50 @@ class Lifecycle(unittest.TestCase):
     def test_urgent_sorted_first(self):
         items, _, _, _ = run({"prom": {**PROM_OK, "free_ratio": 0.1, "md_active": 1}})
         self.assertEqual(items[0]["id"], "raid")
+
+
+class FollowsTheRules(unittest.TestCase):
+    def rules(self, **kw):
+        return {**attention.DEFAULT_RULES, **kw}
+
+    def ids(self, inputs, **kw):
+        active, _ = attention.conditions({**EMPTY, **inputs}, NOW, self.rules(**kw))
+        return set(active)
+
+    def test_defaults_are_todays_numbers(self):
+        self.assertEqual(attention.DEFAULT_RULES, {"free_pct": 15, "service_down_min": 2, "intrusion_min": 3, "hot_c": 50, "slow_pct": 50})
+
+    def test_free_space_follows_rule(self):
+        p = {"prom": {**PROM_OK, "free_ratio": 0.18}}
+        self.assertNotIn("space", self.ids(p, free_pct=15))
+        self.assertIn("space", self.ids(p, free_pct=20))
+
+    def test_hot_follows_rule(self):
+        p = {"prom": {**PROM_OK, "drive_temp": {"sda": 55}}}
+        self.assertIn("hot:sda", self.ids(p, hot_c=50))
+        self.assertNotIn("hot:sda", self.ids(p, hot_c=60))
+
+    def test_slow_follows_rule(self):
+        p = {"prom": {**PROM_OK, "speed_last": 600e6, "speed_median": 1000e6}}
+        self.assertNotIn("speed", self.ids(p, slow_pct=50))
+        self.assertIn("speed", self.ids(p, slow_pct=70))
+
+    def urgent_after(self, inputs, seconds, **kw):
+        state = {}
+        run(inputs, state, NOW, self.rules(**kw))
+        _, urgent, _, _ = run(inputs, state, NOW + seconds, self.rules(**kw))
+        return urgent
+
+    def test_service_down_urgent_after_follows_rule(self):
+        down = {"kuma": {"AdGuard": 0}}
+        self.assertIsNone(self.urgent_after(down, 60, service_down_min=2))
+        self.assertIsNotNone(self.urgent_after(down, 60, service_down_min=1))
+
+    def test_intrusion_urgent_after_follows_rule(self):
+        attack = {"netwatch": nw(nw_item("203.0.113.7", NOW, ["Inbound from the internet to SSH"]))}
+        self.assertIsNone(self.urgent_after(attack, 60, intrusion_min=3))
+        self.assertIsNotNone(self.urgent_after(attack, 60, intrusion_min=1))
+
 
 
 if __name__ == "__main__":
