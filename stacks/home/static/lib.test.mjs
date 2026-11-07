@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { esc, formatAgo, step, visibleCount, greeting } from "./lib.js";
+import { esc, formatAgo, step, visibleCount, greeting, fmtTB, fmtMbps, otherLabel } from "./lib.js";
 
 test("step clamps at both ends", () => {
   assert.equal(step(0, -1, 10), 0);
@@ -44,4 +44,21 @@ test("only plain arrows move the cards", () => {
   assert.equal(arrowAction(k("ArrowRight", { ctrlKey: true })), null);
   assert.equal(arrowAction(k("ArrowRight", { shiftKey: true })), null);
   assert.equal(arrowAction(k("ArrowUp")), null);
+});
+
+test("fmtTB", () => {
+  assert.equal(fmtTB(3.2e12), "3.2 TB");
+  assert.equal(fmtTB(250e9), "250 GB");
+  assert.equal(fmtTB(null), "—");
+});
+
+test("fmtMbps", () => {
+  assert.equal(fmtMbps(936e6), "936 Mb/s");
+  assert.equal(fmtMbps(null), "—");
+});
+
+test("otherLabel", () => {
+  assert.equal(otherLabel(0), "");
+  assert.equal(otherLabel(1), "1 other download");
+  assert.equal(otherLabel(3), "3 other downloads");
 });

@@ -160,6 +160,16 @@ class Throttling(unittest.TestCase):
         self.assertEqual(t.wait("a", 100), 0)
 
 
+class Copies(unittest.TestCase):
+    def test_every_stack_has_the_same_file(self):
+        stacks = os.path.dirname(HERE)
+        with open(os.path.join(HERE, "auth.py"), "rb") as f:
+            ours = f.read()
+        for other in ("mission-control/web/auth.py", "netwatch/auth.py"):
+            with open(os.path.join(stacks, other), "rb") as f:
+                self.assertEqual(f.read(), ours, other)
+
+
 class Hostname(unittest.TestCase):
     def test_strips_the_port(self):
         class H:

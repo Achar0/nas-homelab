@@ -34,3 +34,9 @@ export function arrowAction(e) {
   if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
   return e.key === "ArrowRight" ? "next" : e.key === "ArrowLeft" ? "prev" : null;
 }
+
+export const fmtTB = (v) => (v === null || v === undefined ? "—" : v >= 1e12 ? `${(v / 1e12).toFixed(1)} TB` : `${Math.round(v / 1e9)} GB`);
+export const fmtMbps = (v) => (v === null || v === undefined ? "—" : `${Math.round(v / 1e6)} Mb/s`);
+
+// Guest page: downloads it doesn't name are only counted
+export const otherLabel = (n) => (n > 0 ? `${n} other download${n === 1 ? "" : "s"}` : "");

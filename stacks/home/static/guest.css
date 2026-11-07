@@ -1,0 +1,59 @@
+/* Guest page: same look as Home (tokens in style.css). Desktop fits one screen; phones stack and scroll. */
+.guest {
+  height: 100dvh; overflow: hidden;
+  display: flex; flex-direction: column; gap: 1rem;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1.5rem max(1rem, env(safe-area-inset-bottom));
+  max-width: 100rem; margin-inline: auto;
+}
+.g-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.g-head h1 { font-size: clamp(1.75rem, 2.6vw, 2.5rem); font-weight: 700; letter-spacing: -0.025em; }
+.g-head p { color: var(--text-2); font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+.g-actions { display: flex; align-items: center; gap: 0.6rem; }
+.g-ugos {
+  display: inline-flex; align-items: center; gap: 0.55rem; min-height: 2.75rem; padding: 0.3rem 1.1rem 0.3rem 0.6rem;
+  border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none;
+  transition: transform 160ms var(--ease);
+}
+.g-ugos img { border-radius: 6px; display: block; }
+.g-ugos:active, .g-admin:active { transform: scale(0.97); }
+.g-admin { min-height: 2.75rem; padding: 0 1rem; border-radius: 999px; background: var(--card); color: var(--text-2); font-weight: 500; transition: transform 160ms var(--ease); }
+
+/* Status: one card that says it plainly, then one number per card */
+.g-status { display: flex; gap: 1rem; flex-wrap: wrap; }
+.g-state, .g-num { background: var(--card); border-radius: var(--radius); padding: 0.9rem 1.2rem; }
+.g-state { flex: 2 1 18rem; display: flex; align-items: center; gap: 0.85rem; --c: var(--text-3); background: color-mix(in srgb, var(--c) 14%, var(--card)); }
+.g-state.ok { --c: var(--ok); }
+.g-state.warn { --c: var(--warn); }
+.g-state i { width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--c); flex: none; }
+.g-state b { display: block; font-size: 1.1875rem; font-weight: 600; letter-spacing: -0.01em; }
+.g-state span { color: var(--text-2); font-size: 0.875rem; }
+.g-num { flex: 1 1 9rem; }
+.g-num span { display: block; color: var(--text-2); font-size: 0.8125rem; }
+.g-num b { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+.ep.none { color: var(--text-2); display: flex; align-items: center; }
+
+/* Login sheet */
+.g-login { border: 0; padding: 0; background: var(--card); color: var(--text); border-radius: 18px; width: min(22rem, calc(100vw - 2rem)); box-shadow: 0 20px 60px rgb(0 0 0 / 0.5); }
+.g-login::backdrop { background: rgb(0 0 0 / 0.6); }
+.g-login form { display: flex; flex-direction: column; gap: 0.75rem; padding: 1.25rem; }
+.g-login b { font-size: 1.1875rem; font-weight: 600; }
+#l-pw { font: inherit; font-size: 16px; /* 16 px stops iOS zooming the page */ color: var(--text); background: var(--tile); border: 0; border-radius: 10px; padding: 0.7rem 0.8rem; min-height: 2.75rem; }
+.g-login label { display: flex; align-items: center; gap: 0.5rem; color: var(--text-2); font-size: 0.875rem; min-height: 2rem; }
+.g-login input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); margin: 0; }
+.g-error { color: var(--bad); font-size: 0.875rem; min-height: 1.2em; }
+.g-login-actions { display: flex; gap: 0.6rem; }
+.g-login-actions button { flex: 1; min-height: 2.75rem; border-radius: 10px; font-weight: 600; }
+.g-cancel { background: var(--tile); }
+.g-submit { background: var(--accent); color: #fff; }
+.g-submit:disabled { opacity: 0.5; }
+
+@media (max-width: 700px) {
+  .guest { height: auto; overflow: visible; padding-inline: 1rem; padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
+  .g-actions { width: 100%; }
+  .g-ugos { flex: 1; justify-content: center; }
+  .g-num { flex: 1 1 7rem; }
+  .eps { flex-wrap: wrap; overflow-x: visible; }
+  .ep { flex: 1 1 100%; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) { .g-ugos, .g-admin { transition: none; } }

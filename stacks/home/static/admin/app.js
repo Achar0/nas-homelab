@@ -1,6 +1,6 @@
 // Home page: attention (+ urgent takeover), news carousel, arrivals, compact Mission Control, dock.
-import { esc, formatAgo, greeting, arrowAction } from "../lib.js";
-import { mountCarousel } from "../carousel.js";
+import { esc, formatAgo, greeting, fmtTB, fmtMbps } from "../lib.js";
+import { mountNews } from "../news.js";
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -33,6 +33,7 @@ const DOCK = [
 
 async function getJSON(url, opts) {
   const r = await fetch(url, opts);
+  if (r.status === 401) location.reload();   // session ended: the reload lands on the login
   if (!r.ok) throw new Error(`${url} ${r.status}`);
   return r.json();
 }
@@ -113,62 +114,12 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- news ----------
-const TOPICS = { all: "All", tech: "Tech", markets: "Markets", discoveries: "Discoveries", opened: "Opened" };
-let topic = sessionStorage.getItem("home.topic") || "all";
-const TOPIC_LABEL = { tech: "Tech", markets: "Markets", discoveries: "Discovery" };
-
-const carousel = mountCarousel($("deck"), $("track"), {
-  onIndex(i, count, visible) {
-    const last = Math.min(i + visible, count);
-    $("count").textContent = count ? `${visible > 1 && last > i + 1 ? `${i + 1}–${last}` : i + 1} / ${count}` : "0 / 0";
-    $("prev").disabled = i <= 0;
-    $("next").disabled = i >= count - visible;
-    try { sessionStorage.setItem("home.index", String(i)); } catch { /* private mode */ }
-  },
-});
-
-function storyHtml(s) {
-  return `<article class="story ${esc(s.topic)}">
-    <span class="tag">${esc(TOPIC_LABEL[s.topic] || s.topic)} · ${esc(s.lang.toUpperCase())}</span>
-    <h3>${esc(s.title)}</h3>
-    <p>${esc(s.summary)}</p>
-    <footer><span>${esc(s.source)} · ${s.opened_at ? `opened ${esc(formatAgo(s.opened_at))}` : esc(formatAgo(s.published))}</span>
-      <a href="${esc(s.link)}" target="_blank" rel="noopener" data-open="${esc(s.id)}">Read more ↗</a></footer>
-  </article>`;
-}
-
-function renderTopics() {
-  $("topics").innerHTML = Object.entries(TOPICS).map(([k, v]) =>
-    `<button role="tab" data-t="${k}" aria-selected="${k === topic}">${v}</button>`).join("");
-}
-$("topics").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b || b.dataset.t === topic) return;
-  topic = b.dataset.t;
-  try { sessionStorage.setItem("home.topic", topic); sessionStorage.setItem("home.index", "0"); } catch { /* ignore */ }
-  renderTopics();
-  refreshNews(false);
-});
-
-async function refreshNews(keep = true) {
-  let data;
-  try { data = await getJSON(`/api/news?topic=${topic}`); } catch { return; }
-  const html = (data.items || []).map(storyHtml).join("") ||
-    `<div class="empty">${topic === "opened" ? "Stories you open appear here for 30 days" : data.updated ? "No stories right now" : "Fetching the news…"}</div>`;
-  carousel.set(html, keep);
-}
-
-// remember which stories you actually opened (kept on the NAS, see /api/news?topic=opened)
-$("track").addEventListener("click", (e) => {
-  const a = e.target.closest("a[data-open]");
-  if (a) navigator.sendBeacon(`/api/news/${encodeURIComponent(a.dataset.open)}/open`);
-});
-$("prev").addEventListener("click", () => carousel.prev());
-$("next").addEventListener("click", () => carousel.next());
-document.addEventListener("keydown", (e) => {
-  if (!$("takeover").hidden || e.target.closest("input, textarea, select, [contenteditable]")) return;
-  const act = arrowAction(e);
-  if (act) { carousel[act](); e.preventDefault(); }
+const news = mountNews({
+  getJSON,
+  topics: { all: "All", tech: "Tech", markets: "Markets", discoveries: "Discoveries", opened: "Opened" },
+  // remember which stories you actually opened (kept on the NAS, see /api/news?topic=opened)
+  onOpen: (id) => navigator.sendBeacon(`/api/news/${encodeURIComponent(id)}/open`),
+  keysBlocked: () => !$("takeover").hidden,
 });
 
 // ---------- arrivals ----------
@@ -191,8 +142,6 @@ const fmtBytes = (v) => {
   while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
   return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${u[i]}`;
 };
-const fmtTB = (v) => (v === null ? "—" : v >= 1e12 ? `${(v / 1e12).toFixed(1)} TB` : `${Math.round(v / 1e9)} GB`);
-const fmtMbps = (v) => (v === null ? "—" : `${Math.round(v / 1e6)} Mb/s`);
 
 const RAIL = [
   { k: "CPU", q: '100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[1m])))', f: fmtPct, mc: "#cpu/24H" },
@@ -236,17 +185,20 @@ function buildDock() {
       <span class="dock-label">${a.name}</span></a>`).join("");
 }
 
-// ---------- start ----------
-renderHello(); renderTopics(); buildRail(); buildDock();
-refreshAttention(); refreshArrivals(); refreshRail();
-refreshNews(false).then(() => {
-  const saved = Number(sessionStorage.getItem("home.index") || 0);
-  for (let i = 0; i < saved; i++) carousel.next();
+// ---------- log out ----------
+$("logout").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  location.href = "/";
 });
+
+// ---------- start ----------
+renderHello(); buildRail(); buildDock();
+refreshAttention(); refreshArrivals(); refreshRail();
+news.start();
 const every = (ms, fn) => setInterval(() => { if (!document.hidden) fn(); }, ms);
 every(15000, refreshAttention);
 every(15000, refreshRail);
 every(60000, refreshArrivals);
-every(300000, () => refreshNews(true));
+every(300000, () => news.refresh(true));
 every(30000, renderHello);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshAttention(); refreshRail(); } });
