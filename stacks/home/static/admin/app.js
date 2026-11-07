@@ -70,6 +70,7 @@ async function refreshAttention() {
   el.classList.toggle("single", items.length === 1);
   el.innerHTML = items.length ? items.map(attCard).join("")
     : `<p class="quiet"><span class="dot"></span>All quiet on the NAS</p>`;
+  document.querySelector("#takeover .t-note").hidden = data.push === false;   // only say it if it's true
   showTakeover(data.urgent);
 }
 

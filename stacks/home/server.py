@@ -27,6 +27,7 @@ import auth
 import feeds
 import guest
 import news_db
+import settings
 
 E = os.environ.get
 PORT = int(E("PORT", "3001"))
@@ -34,6 +35,7 @@ DATA = E("DATA_DIR", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
 STATE_PATH = os.path.join(DATA, "state.json")
+SETTINGS_PATH = os.path.join(DATA, "settings.json")
 NEWS_DB = os.path.join(DATA, "news.db")   # archive: every story shown (30 days), opened ones (90 days)
 PROM = E("PROM_URL", "http://127.0.0.1:9090")
 NETWATCH = E("NETWATCH_URL", "http://127.0.0.1:8790")
@@ -48,9 +50,16 @@ LOGIN_BODY_LIMIT = 4096
 THROTTLE = auth.Throttle()
 login_lock = threading.Lock()   # one password check at a time: scrypt is deliberately expensive
 lock = threading.Lock()
+os.makedirs(DATA, exist_ok=True)
+STORE = settings.Store(SETTINGS_PATH, os.path.join(HERE, "feeds.json"))
 STATE = {}
 LATEST = {"attention": {"items": [], "urgent": None, "sources_down": []}, "news": [], "news_errors": [],
           "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0}
+
+
+def alert_rules():
+    """The stored alert numbers and phone switch."""
+    return STORE.get()["alerts"]
 
 
 def log(*a):
@@ -204,16 +213,18 @@ def gather_inputs(now):
 def attention_tick(gather=gather_inputs):
     now = time.time()
     inputs, down = gather(now)
+    rules = alert_rules()
     with lock:
-        items, urgent, pushes = attention.evaluate(inputs, STATE, now)
+        items, urgent, pushes = attention.evaluate(inputs, STATE, now, rules)
         LATEST["attention"] = {"items": items, "urgent": urgent, "sources_down": down}
         LATEST["inputs"], LATEST["inputs_at"] = inputs, now   # raw readings for the guest status line
         try:
             save_state()
         except OSError as e:   # e.g. disk full: keep showing and pushing, just log it
             log("state not saved:", e)
-    for p in pushes:
-        send_push(p["title"], p["detail"])
+    if rules["push"]:   # while off, a problem counts as already pushed: nothing is sent later
+        for p in pushes:
+            send_push(p["title"], p["detail"])
 
 
 def feeds_tick():
@@ -304,7 +315,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.redirect(auth.DEFAULT_NEXT)
             return super().do_GET()
         if path == "/api/public/summary":
-            data = guest.summary(LATEST["inputs"], LATEST["arrivals"], time.time(), LATEST["inputs_at"])
+            data = guest.summary(LATEST["inputs"], LATEST["arrivals"], time.time(), LATEST["inputs_at"], alert_rules())
             demo = guest.DEMO.get((q.get("demo") or [""])[0])
             return self.json({**data, "status": demo} if demo else data)
         if path == "/api/news" and "opened" not in q.get("topic", []):
@@ -321,7 +332,7 @@ class Handler(SimpleHTTPRequestHandler):
             if self.translate_path(self.path) == ADMIN_STATIC and not path.endswith("/"):
                 return self.redirect("/admin/")
         if path == "/api/attention":
-            data = dict(LATEST["attention"])
+            data = {**LATEST["attention"], "push": alert_rules()["push"]}
             if q.get("demo") == ["urgent"]:   # preview the takeover; never stored, never pushed
                 data = {**data, "items": [DEMO] + data["items"], "urgent": DEMO}
             elif q.get("demo") == ["many"]:
@@ -394,7 +405,7 @@ class Handler(SimpleHTTPRequestHandler):
                         save_state()
                     except OSError as e:
                         log("state not saved:", e)
-                    items, urgent, _ = attention.evaluate({}, STATE, time.time())   # no inputs: only re-render
+                    items, urgent, _ = attention.evaluate({}, STATE, time.time(), alert_rules())   # no inputs: only re-render
                     LATEST["attention"] = {**LATEST["attention"], "items": items, "urgent": urgent}
             return self.json({"ok": True}) if ok else self.send_error(404)
         return self.send_error(404)

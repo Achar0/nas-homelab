@@ -42,6 +42,38 @@ class Tick(unittest.TestCase):
         self.assertEqual(server.LATEST["attention"]["urgent"]["id"], "raid")
 
 
+class PhoneSwitch(unittest.TestCase):
+    def setUp(self):
+        self.sent = []
+        real, reset = server.send_push, dict(server.STATE)
+        server.send_push = lambda title, detail: self.sent.append(title)
+        self.addCleanup(setattr, server, "send_push", real)
+        server.STATE.clear()
+        self.addCleanup(lambda: (server.STATE.clear(), server.STATE.update(reset)))
+        self.addCleanup(lambda: server.STORE.update(lambda s: s["alerts"].update(push=True)))
+
+    def gather(self, now):
+        return {"prom": {"md_active": 1, "md_required": 2}}, []
+
+    def test_push_on_sends(self):
+        server.attention_tick(self.gather)
+        self.assertEqual(self.sent, ["RAID degraded"])
+
+    def test_push_off_sends_nothing_and_never_sends_later(self):
+        server.STORE.update(lambda s: s["alerts"].update(push=False))
+        server.attention_tick(self.gather)
+        self.assertEqual(self.sent, [])
+        server.STORE.update(lambda s: s["alerts"].update(push=True))
+        server.attention_tick(self.gather)
+        self.assertEqual(self.sent, [])
+
+    def test_ticks_use_the_stored_numbers(self):
+        server.STORE.update(lambda s: s["alerts"].update(hot_c=40))
+        self.addCleanup(lambda: server.STORE.update(lambda s: s["alerts"].update(hot_c=50)))
+        server.attention_tick(lambda now: ({"prom": {"drive_temp": {"sda": 45}}}, []))
+        self.assertEqual([i["id"] for i in server.LATEST["attention"]["items"]], ["hot:sda"])
+
+
 class Limits(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -116,6 +148,12 @@ class Api(unittest.TestCase):
                                                      "resolved_at": None, "level": "normal", "title": "Free space low",
                                                      "detail": "10% free", "src": "prom", "app": "mission"}}})
         server.LATEST["attention"] = {"items": [], "urgent": None, "sources_down": []}
+
+    def test_attention_api_reports_push_state(self):
+        self.assertIs(self.req("/api/attention")[1]["push"], True)
+        server.STORE.update(lambda s: s["alerts"].update(push=False))
+        self.addCleanup(lambda: server.STORE.update(lambda s: s["alerts"].update(push=True)))
+        self.assertIs(self.req("/api/attention")[1]["push"], False)
 
     def test_dismiss_persists(self):
         code, _ = self.req("/api/attention/space/dismiss", "POST")

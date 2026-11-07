@@ -62,11 +62,11 @@ def _source_unreadable(inputs):
             or not prom.get("smart_status") or not prom.get("drive_temp"))
 
 
-def status(inputs, now, updated):
+def status(inputs, now, updated, rules=attention.DEFAULT_RULES):
     if inputs is None or now - updated > STALE_S:
         return UNKNOWN
     readable = {k: inputs.get(k) for k in REQUIRED_SOURCES}   # no Netwatch, no episode rule
-    active, _ = attention.conditions(readable, now)
+    active, _ = attention.conditions(readable, now, rules)
     if active:
         ranked = sorted(_rank(cid) for cid in active)
         more = len(ranked) - 1
@@ -83,7 +83,7 @@ def downloads(data):
     return {"arrived": known(arrived), "downloading": known(downloading), "other": other}
 
 
-def summary(inputs, arrivals_data, now, updated):
+def summary(inputs, arrivals_data, now, updated, rules=attention.DEFAULT_RULES):
     prom = (inputs or {}).get("prom") or {}
-    return {"status": status(inputs, now, updated), "internet_bps": prom.get("speed_last"),
+    return {"status": status(inputs, now, updated, rules), "internet_bps": prom.get("speed_last"),
             "free_bytes": prom.get("free_bytes"), "downloads": downloads(arrivals_data)}
