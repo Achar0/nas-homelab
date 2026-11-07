@@ -11,7 +11,7 @@ Every Docker stack running on the NAS is mirrored here, with secrets removed, so
 
 ## Screenshots
 
-Made-up data, because this repo is public. All of them, with descriptions, are in [`docs/screenshots`](docs/screenshots/README.md).
+Made-up data unless noted, because this repo is public. All of them, with descriptions, are in [`docs/screenshots`](docs/screenshots/README.md).
 
 **Guest page:** what family and guests see at `:3001`.
 
@@ -24,6 +24,10 @@ Made-up data, because this repo is public. All of them, with descriptions, are i
 **Mission Control:** performance history, disks and services.
 
 ![Mission Control with a processor history chart and service cards](docs/screenshots/mission.png)
+
+**Connections globe:** live connections from home, expanded from Mission Control's rail. This one is the real page, with no addresses or names showing.
+
+![3D globe with arcs from home to live connections, one flagged in red](docs/screenshots/mission-globe.png)
 
 **Netwatch:** where the NAS's connections go, with flagged addresses in red.
 
