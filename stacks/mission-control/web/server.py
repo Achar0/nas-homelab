@@ -1,8 +1,9 @@
 """Mission Control web server (:8800).
 
-Serves the page, the vendored JS libraries, and two read-only proxies:
+Serves the page, the vendored JS libraries, and these read-only proxies:
   /api/prom/query, /api/prom/query_range -> Prometheus (127.0.0.1:9090)
   /api/netwatch                          -> Netwatch /api/state
+  /api/layout                            -> Home /api/internal/layout (dock and card order from Settings)
 Nothing else of Prometheus (e.g. its admin API) is reachable through here.
 """
 import os
@@ -16,6 +17,7 @@ import auth
 PORT = int(os.environ.get("PORT", "8800"))
 PROM = os.environ.get("PROM_URL", "http://127.0.0.1:9090")
 NETWATCH = os.environ.get("NETWATCH_URL", "http://127.0.0.1:8790")
+HOME = os.environ.get("HOME_URL", "http://127.0.0.1:3001")
 DATA = os.environ.get("DATA_DIR", "/data")
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 PROM_ALLOWED = {"/api/prom/query": "/api/v1/query", "/api/prom/query_range": "/api/v1/query_range"}
@@ -85,6 +87,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.proxy(url) if url else self.send_error(404)
         if path == "/api/netwatch":
             return self.proxy(NETWATCH + "/api/state")
+        if path == "/api/layout":
+            return self.proxy(HOME + "/api/internal/layout")
         if path.startswith("/vendor/"):
             name = path[len("/vendor/"):]
             p = os.path.join(DATA, "vendor", name)

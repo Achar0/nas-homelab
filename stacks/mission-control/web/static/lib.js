@@ -81,3 +81,15 @@ export const unavailable = (up, value) => up !== 1 || !ok(value);
 // Escape text before it goes into innerHTML (Prometheus labels, device names, Netwatch strings)
 const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const esc = (v) => (v === null || v === undefined ? "" : String(v).replace(/[&<>"']/g, (c) => ESC[c]));
+
+// Settings: items in order's sequence; show:false left out, unknown ids ignored, items order doesn't name stay at the end
+export function applyLayout(items, order) {
+  if (!order) return items;
+  const byId = new Map(items.map((x) => [x.id, x]));
+  const out = [];
+  for (const o of order) {
+    if (byId.has(o.id) && o.show !== false) out.push(byId.get(o.id));
+  }
+  const named = new Set(order.map((o) => o.id));
+  return out.concat(items.filter((x) => !named.has(x.id)));
+}

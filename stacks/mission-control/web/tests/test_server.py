@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
 
@@ -106,6 +107,58 @@ class Gate(unittest.TestCase):
     def test_expired_session_refuses(self):
         old = {"Cookie": f"nas_admin={auth.make_token(KEY, time.time() - 1)}"}
         self.assertEqual(self.call("/api/netwatch", headers=old)[0], 401)
+
+
+class Layout(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.web = server.make_server(0)
+        cls.port = cls.web.server_address[1]
+        threading.Thread(target=cls.web.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.web.shutdown()
+        cls.web.server_close()
+
+    def setUp(self):
+        self.addCleanup(setattr, server, "HOME", server.HOME)
+
+    def call(self, headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        c.request("GET", "/api/layout", headers=headers or {})
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r.status, body
+
+    def test_layout_needs_login(self):
+        self.assertEqual(self.call()[0], 401)
+
+    def test_layout_proxies_home(self):
+        class Home(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = json.dumps({"path": self.path}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        home = ThreadingHTTPServer(("127.0.0.1", 0), Home)
+        self.addCleanup(home.server_close)
+        self.addCleanup(home.shutdown)
+        threading.Thread(target=home.serve_forever, daemon=True).start()
+        server.HOME = f"http://127.0.0.1:{home.server_address[1]}"
+        status, body = self.call(cookie())
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"path": "/api/internal/layout"})
+
+    def test_layout_502_when_home_is_down(self):
+        server.HOME = "http://127.0.0.1:1"
+        self.assertEqual(self.call(cookie())[0], 502)
+
 
 
 if __name__ == "__main__":

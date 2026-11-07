@@ -1,5 +1,5 @@
 // Home page: attention (+ urgent takeover), news carousel, arrivals, compact Mission Control, dock.
-import { esc, formatAgo, greeting, fmtTB, fmtMbps } from "../lib.js";
+import { esc, formatAgo, greeting, fmtTB, fmtMbps, applyLayout } from "../lib.js";
 import { mountNews } from "../news.js";
 
 const $ = (id) => document.getElementById(id);
@@ -144,17 +144,19 @@ const fmtBytes = (v) => {
   return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${u[i]}`;
 };
 
-const RAIL = [
-  { k: "CPU", q: '100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[1m])))', f: fmtPct, mc: "#cpu/24H" },
-  { k: "Memory", q: "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", f: fmtPct, mc: "#mem/24H" },
-  { k: "Temperature", q: 'node_hwmon_temp_celsius{chip=~".*coretemp.*",sensor="temp1"}', f: (v) => (v === null ? "—" : `${Math.round(v)}°C`), mc: "#temps/24H" },
-  { k: "Free space", q: 'node_filesystem_avail_bytes{mountpoint="/volume1"}', f: fmtTB, mc: "" },
+const RAIL_DEFAULT = [
+  { id: "cpu", k: "CPU", q: '100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[1m])))', f: fmtPct, mc: "#cpu/24H" },
+  { id: "memory", k: "Memory", q: "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", f: fmtPct, mc: "#mem/24H" },
+  { id: "temperature", k: "Temperature", q: 'node_hwmon_temp_celsius{chip=~".*coretemp.*",sensor="temp1"}', f: (v) => (v === null ? "—" : `${Math.round(v)}°C`), mc: "#temps/24H" },
+  { id: "free", k: "Free space", q: 'node_filesystem_avail_bytes{mountpoint="/volume1"}', f: fmtTB, mc: "" },
 ];
-const SERVICES = [
-  { k: "qBittorrent", s: "upload", q: "mc_qbt_upload_bytes_per_second", f: fmtBytes, mc: "#card=qbittorrent/24H" },
-  { k: "AdGuard", s: "blocked · 24 h", q: "100 * mc_adguard_blocked_24h / mc_adguard_queries_24h", f: fmtPct, mc: "#card=adguard/24H" },
-  { k: "Speedtest", s: "last download", q: "mc_speedtest_download_bits_per_second", f: fmtMbps, mc: "#card=speedtest/24H" },
+const SERVICES_DEFAULT = [
+  { id: "qbittorrent", k: "qBittorrent", s: "upload", q: "mc_qbt_upload_bytes_per_second", f: fmtBytes, mc: "#card=qbittorrent/24H" },
+  { id: "adguard", k: "AdGuard", s: "blocked · 24 h", q: "100 * mc_adguard_blocked_24h / mc_adguard_queries_24h", f: fmtPct, mc: "#card=adguard/24H" },
+  { id: "speedtest", k: "Speedtest", s: "last download", q: "mc_speedtest_download_bits_per_second", f: fmtMbps, mc: "#card=speedtest/24H" },
 ];
+
+let RAIL = RAIL_DEFAULT, SERVICES = SERVICES_DEFAULT;
 
 function buildRail() {
   const tile = (x, i, grp) => `<a class="tile" href="${at(8800)}/${x.mc}" target="_blank" rel="noopener">
@@ -178,12 +180,23 @@ async function refreshRail() {
 }
 
 // ---------- dock ----------
-function buildDock() {
-  $("dock").innerHTML = DOCK.map((a) => `
-    <a class="dock-app" href="${a.href}" target="_blank" rel="noopener" title="${a.name}">
-      ${a.mono ? `<span class="dock-icon mono" style="--icon:url('../icons/${a.icon}')"></span>`
-               : `<span class="dock-icon"><img src="../icons/${a.icon}" alt=""></span>`}
-      <span class="dock-label">${a.name}</span></a>`).join("");
+function buildDock(apps = DOCK) {
+  $("dock").innerHTML = apps.map((a) => `
+    <a class="dock-app" href="${esc(a.href)}" target="_blank" rel="noopener" title="${esc(a.name)}">
+      ${a.mono ? `<span class="dock-icon mono" style="--icon:url('../icons/${esc(a.icon)}')"></span>`
+               : `<span class="dock-icon"><img src="../icons/${esc(a.icon)}" alt=""></span>`}
+      <span class="dock-label">${esc(a.name)}</span></a>`).join("");
+}
+
+// What Settings chose. Until it arrives, or if it can't be read, the built-in defaults stay.
+async function applySettings() {
+  const layout = await getJSON("/api/layout").catch(() => null);
+  if (!layout) return;
+  RAIL = applyLayout(RAIL_DEFAULT, layout.rail.nas);
+  SERVICES = applyLayout(SERVICES_DEFAULT, layout.rail.services);
+  buildRail();
+  refreshRail();
+  buildDock(layout.dock.filter((a) => a.id !== "home").map((a) => ({ ...a, href: at(a.port, a.scheme) })));
 }
 
 // ---------- log out ----------
@@ -194,7 +207,7 @@ $("logout").addEventListener("click", async () => {
 
 // ---------- start ----------
 renderHello(); buildRail(); buildDock();
-refreshAttention(); refreshArrivals(); refreshRail();
+refreshAttention(); refreshArrivals(); refreshRail(); applySettings();
 news.start();
 const every = (ms, fn) => setInterval(() => { if (!document.hidden) fn(); }, ms);
 every(15000, refreshAttention);

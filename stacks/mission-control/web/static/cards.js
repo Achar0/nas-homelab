@@ -3,9 +3,9 @@
 import { CARDS } from "./metrics.js";
 import {
   makeChart, rangeSeries, instant, instantAll, go, render, state, hooks,
-  renderRanges, rangeName, summaryLine, hoverLine, legendHtml,
+  renderRanges, rangeName, summaryLine, hoverLine, legendHtml, layoutReady,
 } from "./app.js";
-import { formatAgo, unavailable, formatCount, esc, autoRefresh } from "./lib.js";
+import { formatAgo, unavailable, formatCount, esc, autoRefresh, applyLayout } from "./lib.js";
 import { connections } from "./connections.js";
 
 const $ = (id) => document.getElementById(id);
@@ -18,13 +18,14 @@ const EASE = "cubic-bezier(0.2, 0.9, 0.25, 1)";
 export const extraCards = [connections];   // non-Prometheus cards: {id, railHtml, refresh, open(panel), close}
 
 // ---------- rail ----------
-function buildRail() {
-  rail.innerHTML = `<h2>Services</h2>` + CARDS.map((c) => `
+function buildRail(order) {
+  // A card hidden in Settings only leaves the rail: links like #card=adguard still open it
+  rail.innerHTML = `<h2>Services</h2>` + applyLayout([...CARDS, ...extraCards], order).map((c) => c.railHtml ?? `
     <button class="card" data-id="${c.id}" aria-expanded="false" aria-controls="panel">
       <span class="t"><span>${c.title}</span><span class="chev" aria-hidden="true">›</span></span>
       <span class="v" id="cv-${c.id}">—</span>
       <span class="s" id="cs-${c.id}">&nbsp;</span>
-    </button>`).join("") + extraCards.map((x) => x.railHtml).join("");
+    </button>`).join("");
   rail.onclick = (e) => {
     const b = e.target.closest(".card");
     if (b) go({ open: state.open === b.dataset.id ? null : b.dataset.id });
@@ -32,6 +33,7 @@ function buildRail() {
 }
 
 async function refreshCard(c) {
+  if (!rail.querySelector(`[data-id="${c.id}"]`)) return;   // hidden in Settings
   const [up, v, sub] = await Promise.all([
     instant(`mc_up{source="${c.source}"}`).catch(() => null),
     instant(c.key.expr).catch(() => null),
@@ -230,10 +232,10 @@ function renderPanel(s) {
 }
 
 // ---------- start ----------
-export function startCards() {
-  buildRail();
+export async function startCards() {
   hooks.renderPanel = renderPanel;
   hooks.closePanel = closePanel;
+  buildRail((await layoutReady)?.cards);   // built once: the Connections globe mounts into the rail
   refreshRail();
   setInterval(() => {
     if (document.hidden) return;

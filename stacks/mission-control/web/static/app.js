@@ -1,6 +1,6 @@
 // Mission Control page: state, data fetching, rendering.
 // State lives in the URL hash (#cpu/24H, #card=qbittorrent/24H) so a reload keeps the view.
-import { RANGES, rateWindow, summarize, toSeries, formatTemp, formatPercent, autoRefresh } from "./lib.js";
+import { RANGES, rateWindow, summarize, toSeries, formatTemp, formatPercent, autoRefresh, esc } from "./lib.js";
 import { METRICS, DOCK } from "./metrics.js";
 
 const $ = (id) => document.getElementById(id);
@@ -314,14 +314,24 @@ export function render() {
 export { state };
 
 // ---------- dock ----------
-function buildDock() {
-  $("dock").innerHTML = DOCK.map((a) => `
-    <a class="dock-app" href="${a.href}" target="_blank" rel="noopener" title="${a.name}">
-      ${a.mono ? `<span class="dock-icon mono" style="--icon:url('icons/${a.icon}')"></span>`
-               : `<span class="dock-icon"><img src="icons/${a.icon}" alt=""></span>`}
-      <span class="dock-label">${a.name}</span>
+function buildDock(apps = DOCK) {
+  $("dock").innerHTML = apps.map((a) => `
+    <a class="dock-app" href="${esc(a.href)}" target="_blank" rel="noopener" title="${esc(a.name)}">
+      ${a.mono ? `<span class="dock-icon mono" style="--icon:url('icons/${esc(a.icon)}')"></span>`
+               : `<span class="dock-icon"><img src="icons/${esc(a.icon)}" alt=""></span>`}
+      <span class="dock-label">${esc(a.name)}</span>
     </a>`).join("");
 }
+
+// What Settings on Home chose. null (Home unreachable or slow) keeps the built-in defaults.
+export const layoutReady = Promise.race([
+  fetch("/api/layout").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  new Promise((resolve) => setTimeout(() => resolve(null), 2000)),
+]);
+layoutReady.then((layout) => {
+  if (!layout?.dock) return;
+  buildDock(layout.dock.filter((a) => a.id !== "mission").map((a) => ({ ...a, href: `${a.scheme}://${location.hostname}:${a.port}` })));
+});
 
 // ---------- start ----------
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.open) go({ open: null }); });

@@ -33,6 +33,7 @@ export const connections = {
     </button>`,
 
   async refresh() {
+    if (!$("cs-connections")) return;   // hidden in Settings
     try {
       await fetchState();
       $("cs-connections").textContent = connectionSummary(netState);
