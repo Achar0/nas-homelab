@@ -9,7 +9,6 @@ services:
     network_mode: host
     env_file:
       - .env                        # QBT_USER/QBT_PASS, KUMA_API_KEY, NTFY_URL (not in git)
-      - ../admin-auth.env           # ADMIN_PASSWORD_HASH, SESSION_SECRET (not in git)
     environment:
       PORT: 3001
       DATA_DIR: /data
@@ -23,3 +22,4 @@ services:
       - ./data:/data                 # state.json: incidents, dismissals, acknowledgements
       - ./static:/app/static:ro      # page files, editable without a rebuild
       - ./feeds.json:/app/feeds.json:ro
+      - ../admin-auth:/admin-auth    # admin login (not in git). The folder, so an atomic replace reaches the container

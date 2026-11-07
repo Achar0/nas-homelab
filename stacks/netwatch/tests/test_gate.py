@@ -1,5 +1,6 @@
 """Netwatch needs the admin login, except for Home and Mission Control on the same machine."""
 import http.client
+import json
 import os
 import sys
 import tempfile
@@ -21,8 +22,9 @@ KEY = "k" * 64
 class Gate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        os.environ["SESSION_SECRET"] = KEY
-        os.environ["ADMIN_PASSWORD_HASH"] = "scrypt:2:1:1:00:00"
+        os.environ["ADMIN_AUTH_FILE"] = os.path.join(tempfile.mkdtemp(), "auth.json")
+        with open(os.environ["ADMIN_AUTH_FILE"], "w") as f:
+            json.dump({"hash": "scrypt:2:1:1:00:00", "key": KEY}, f)
         cls.httpd = app.ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
         cls.port = cls.httpd.server_address[1]
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()

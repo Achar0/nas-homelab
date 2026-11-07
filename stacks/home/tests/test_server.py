@@ -11,6 +11,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["DATA_DIR"] = tempfile.mkdtemp()
 os.environ["NTFY_URL"] = ""
+AUTH_FILE = os.path.join(tempfile.mkdtemp(), "auth.json")
 import auth  # noqa: E402
 import server  # noqa: E402
 
@@ -97,8 +98,9 @@ class Api(unittest.TestCase):
         cls.httpd.server_close()
 
     def req(self, path, method="GET"):
-        os.environ["SESSION_SECRET"] = KEY
-        os.environ["ADMIN_PASSWORD_HASH"] = "scrypt:2:1:1:00:00"
+        os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+        with open(AUTH_FILE, "w") as f:
+            json.dump({"hash": "scrypt:2:1:1:00:00", "key": KEY}, f)
         cookie = f"nas_admin={auth.make_token(KEY, time.time() + 60)}"
         r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None,
                                    headers={"Cookie": cookie})

@@ -1,4 +1,5 @@
 import http.client
+import json
 import os
 import sys
 import tempfile
@@ -15,8 +16,9 @@ import auth  # noqa: E402
 import server  # noqa: E402
 
 KEY = "k" * 64
-os.environ["SESSION_SECRET"] = KEY
-os.environ["ADMIN_PASSWORD_HASH"] = "scrypt:2:1:1:00:00"
+os.environ["ADMIN_AUTH_FILE"] = os.path.join(tempfile.mkdtemp(), "auth.json")
+with open(os.environ["ADMIN_AUTH_FILE"], "w") as f:
+    json.dump({"hash": "scrypt:2:1:1:00:00", "key": KEY}, f)
 
 
 def cookie():

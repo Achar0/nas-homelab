@@ -359,7 +359,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(body, dict) or not isinstance(body.get("pw"), str):
             return self.json({"error": "bad request"}, 400)
         if not auth.configured():
-            log("login refused: ADMIN_PASSWORD_HASH or SESSION_SECRET is missing or invalid")
+            log("login refused:", auth.auth_file(), "is missing or invalid")
             return self.json({"error": "not_configured"}, 503)
         addr, now = self.client_address[0], time.time()
         with login_lock:

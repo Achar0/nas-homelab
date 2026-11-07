@@ -21,11 +21,25 @@ PW = "correct horse"
 PW_HASH = auth.hash_password(PW)
 
 
+AUTH_FILE = os.path.join(tempfile.mkdtemp(), "auth.json")
+
+
+def write_auth(pw_hash, key):
+    os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+    with open(AUTH_FILE, "w") as f:
+        json.dump({"hash": pw_hash, "key": key}, f)
+
+
+def remove_auth():
+    os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+    if os.path.exists(AUTH_FILE):
+        os.remove(AUTH_FILE)
+
+
 class Base(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        os.environ["SESSION_SECRET"] = KEY
-        os.environ["ADMIN_PASSWORD_HASH"] = PW_HASH
+        write_auth(PW_HASH, KEY)
         cls.httpd = server.make_server(0)
         cls.port = cls.httpd.server_address[1]
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
@@ -34,8 +48,7 @@ class Base(unittest.TestCase):
     def tearDownClass(cls):
         cls.httpd.shutdown()
         cls.httpd.server_close()
-        os.environ.pop("SESSION_SECRET", None)
-        os.environ.pop("ADMIN_PASSWORD_HASH", None)
+        remove_auth()
 
     def setUp(self):
         server.THROTTLE.reset(HOST)
@@ -209,8 +222,7 @@ class NotConfigured(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        os.environ.pop("SESSION_SECRET", None)
-        os.environ.pop("ADMIN_PASSWORD_HASH", None)
+        remove_auth()
         cls.httpd = server.make_server(0)
         cls.port = cls.httpd.server_address[1]
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
