@@ -458,6 +458,40 @@ class Handler(SimpleHTTPRequestHandler):
         target = auth.safe_next(body.get("next"), auth.request_hostname(self))
         return self.json({"ok": True, "next": target}, cookie=auth.login_cookie(bool(body.get("remember")), now))
 
+    def change_password(self):
+        body = self.read_json(LOGIN_BODY_LIMIT)
+        if body is None:
+            return None
+        current, new = body.get("current"), body.get("new")
+        if not isinstance(current, str) or not isinstance(new, str):
+            return self.json({"error": "bad request"}, 400)
+        if len(new) < auth.MIN_PASSWORD_LEN:
+            return self.json({"error": f"Use at least {auth.MIN_PASSWORD_LEN} characters."}, 400)
+        addr, now = self.client_address[0], time.time()
+        remembered = auth.was_remembered(self.headers.get("Cookie"), now)
+        with login_lock:
+            wait = THROTTLE.wait(addr, now)
+            if wait:
+                return self.json({"error": "wait", "retry_after": wait}, 429)
+            try:
+                changed = auth.change_password(current, new)
+            except OSError as e:
+                log("password not saved:", e.__class__.__name__)
+                return self.json({"error": "Couldn't save the password on the NAS."}, 503)
+            if not changed:
+                THROTTLE.fail(addr, now)
+                return self.json({"error": "wrong"}, 403)   # not 401: this session is still fine
+            THROTTLE.reset(addr)
+        return self.json({"ok": True}, cookie=auth.login_cookie(remembered, now))
+
+    def logout_everywhere(self):
+        try:
+            auth.log_out_everywhere()
+        except (OSError, ValueError) as e:
+            log("log out everywhere failed:", e.__class__.__name__)
+            return self.json({"error": "Couldn't save the change on the NAS."}, 503)
+        return self.json({"ok": True}, cookie=auth.logout_cookie())
+
     def save(self, fn, wake=False):
         """Apply one settings change and answer: 200, 400 if refused, 503 if it couldn't be written."""
         try:
@@ -594,6 +628,10 @@ class Handler(SimpleHTTPRequestHandler):
         if not auth.require_login(self):
             return None
         parts = path.strip("/").split("/")
+        if path == "/api/account/password":
+            return self.change_password()
+        if path == "/api/account/logout-everywhere":
+            return self.logout_everywhere()
         if parts[:2] == ["api", "settings"]:
             return self.settings_post([urllib.parse.unquote(x) for x in parts[2:]])
         if len(parts) == 4 and parts[:2] == ["api", "news"] and parts[3] == "open":

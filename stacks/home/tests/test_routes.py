@@ -217,6 +217,76 @@ class Login(Base):
         self.assertIn("Max-Age=0", headers["Set-Cookie"])
 
 
+class Account(Base):
+    def setUp(self):
+        super().setUp()
+        write_auth(PW_HASH, KEY)
+        self.addCleanup(write_auth, PW_HASH, KEY)
+        real = auth.save
+        self.addCleanup(setattr, auth, "save", real)
+
+    def change(self, cookie, current=PW, new="a new password"):
+        return self.call("/api/account/password", "POST", cookie=cookie, body=json.dumps({"current": current, "new": new}))
+
+    def ok(self, cookie):
+        return self.call("/api/attention", cookie=cookie)[0] == 200
+
+    def test_account_routes_need_login(self):
+        self.assertEqual(self.change(None)[0], 401)
+        self.assertEqual(self.call("/api/account/logout-everywhere", "POST", body="{}")[0], 401)
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_change_keeps_this_session_and_ends_others(self):
+        a, b = self.cookie(), self.cookie()
+        status, headers, _ = self.change(a)
+        self.assertEqual(status, 200)
+        new_cookie = headers["Set-Cookie"].split(";")[0]
+        self.assertTrue(self.ok(new_cookie))
+        self.assertFalse(self.ok(b))
+        self.assertTrue(auth.login_ok("a new password"))
+        self.assertFalse(auth.login_ok(PW))
+
+    def test_change_keeps_remember_setting(self):
+        short = self.cookie()   # expires in 60 s, so not "remember"
+        self.assertNotIn("Max-Age", self.change(short)[1]["Set-Cookie"])
+        write_auth(PW_HASH, KEY)
+        long = self.cookie(time.time() + 20 * 86400)
+        self.assertIn("Max-Age=2592000", self.change(long)[1]["Set-Cookie"])
+
+    def test_wrong_current_is_throttled_like_login(self):
+        cookie = self.cookie()
+        for _ in range(5):
+            status, _, data = self.change(cookie, current="wrong")
+            self.assertEqual(status, 403)
+        status, _, data = self.change(cookie, current="wrong")
+        self.assertEqual(status, 429)
+        self.assertIn("retry_after", json.loads(data))
+        self.assertEqual(self.change(cookie)[0], 429)   # even with the right one, until the wait is over
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_short_new_password_400(self):
+        self.assertEqual(self.change(self.cookie(), new="short")[0], 400)
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_wrong_types_400(self):
+        status, _, _ = self.call("/api/account/password", "POST", cookie=self.cookie(), body=json.dumps({"current": 1, "new": 2}))
+        self.assertEqual(status, 400)
+
+    def test_logout_everywhere_ends_this_session_too(self):
+        cookie = self.cookie()
+        status, headers, _ = self.call("/api/account/logout-everywhere", "POST", cookie=cookie, body="{}")
+        self.assertEqual(status, 200)
+        self.assertIn("Max-Age=0", headers["Set-Cookie"])
+        self.assertFalse(self.ok(cookie))
+        self.assertTrue(auth.login_ok(PW))
+
+    def test_read_only_or_missing_auth_file_says_so(self):
+        auth.save = lambda *a: (_ for _ in ()).throw(OSError("read-only"))
+        self.assertEqual(self.change(self.cookie())[0], 503)
+        self.assertEqual(self.call("/api/account/logout-everywhere", "POST", cookie=self.cookie(), body="{}")[0], 503)
+        self.assertTrue(auth.login_ok(PW))
+
+
 class NotConfigured(unittest.TestCase):
     """Missing settings: login refused, locked routes stay locked, guests unaffected."""
 
