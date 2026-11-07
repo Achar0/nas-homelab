@@ -50,6 +50,8 @@ ADMIN_STATIC = os.path.join(STATIC, "admin")
 LOGIN_BODY_LIMIT = 4096
 SETTINGS_BODY_LIMIT = 65536
 FEED_NAME_LIMIT = 80
+LOOPBACK = {"127.0.0.1", "::1"}   # Mission Control and Netwatch on this machine; no reverse proxy runs in front
+SHOW_LISTS = {"rail_nas": lambda s: s["rail"]["nas"], "rail_services": lambda s: s["rail"]["services"], "cards": lambda s: s["cards"]}
 FEEDS_WAKE = threading.Event()   # set to refresh the news now instead of at the next 15-minute cycle
 THROTTLE = auth.Throttle()
 login_lock = threading.Lock()   # one password check at a time: scrypt is deliberately expensive
@@ -285,6 +287,14 @@ def loop(fn, every):
 
 
 # ---------- HTTP ----------
+def layout_view():
+    """What the pages need to draw docks, rails and cards. Mission Control gets this without a login: keep it minimal."""
+    s = STORE.get()
+    fields = ("id", "name", "icon", "mono", "port", "scheme")
+    return {"dock": [{k: x[k] for k in fields} for x in s["services"] if x["on_dock"]],
+            "rail": s["rail"], "cards": s["cards"], "push": s["alerts"]["push"]}
+
+
 def prom_target(path, qs):
     return f"{PROM}/api/v1/query?{qs}" if path == "/api/prom/query" else None
 
@@ -301,6 +311,18 @@ DEMO_MANY = [  # ?demo=many: preview several cards in priority order (never stor
     {"id": "demo-4", "level": "normal", "title": "Slow internet", "detail": "Last speed test 310 Mb/s, usually 930 Mb/s (demo)",
      "app": "speedtest", "since": time.time() - 3 * 3600, "resolved": True, "acked": False},
 ]
+
+
+def _edit_service(s, sid, **changes):
+    next(x for x in s["services"] if x["id"] == sid).update(changes)
+
+
+def _in_order(rows, ids):
+    """rows rearranged to follow ids, which must name each row exactly once."""
+    by_id = {x["id"]: x for x in rows}
+    if sorted(ids) != sorted(by_id):
+        raise ValueError("the list changed, reload the page")
+    return [by_id[i] for i in ids]
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -354,6 +376,10 @@ class Handler(SimpleHTTPRequestHandler):
             items = [i for i in LATEST["news"] if topic == "all" or i["topic"] == topic]
             data = {"items": items, "updated": LATEST["news_updated"]}
             return self.json({**data, "errors": LATEST["news_errors"]} if self.logged_in() else data)
+        if path == "/api/internal/layout":
+            if self.client_address[0] in LOOPBACK:
+                return self.json(layout_view())
+            return self.json({"error": "login required"}, 401)
         if path.startswith("/api/"):
             if not auth.require_login(self):
                 return None
@@ -362,6 +388,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return None
             if self.translate_path(self.path) == ADMIN_STATIC and not path.endswith("/"):
                 return self.redirect("/admin/")
+        if path == "/api/layout":
+            return self.json(layout_view())
         if path == "/api/settings":
             view = STORE.get()
             del view["known_containers"]
@@ -451,7 +479,70 @@ class Handler(SimpleHTTPRequestHandler):
             return self.add_feed(body)
         if parts[:1] == ["feeds"] and len(parts) in (2, 3):
             return self.change_feed(parts[1], parts[2:], body)
+        if parts == ["alerts"]:
+            return self.change_alerts(body)
+        if parts[:1] == ["services"] and len(parts) in (2, 3):
+            return self.change_service(parts[1], parts[2:], body)
+        if parts == ["order"]:
+            return self.change_order(body)
+        if parts == ["show"]:
+            return self.change_show(body)
         return self.send_error(404)
+
+    def change_alerts(self, body):
+        if not body or not set(body) <= {*settings.ALERT_LIMITS, "push"}:
+            return self.json({"error": "bad request"}, 400)
+        return self.save(lambda s: s["alerts"].update(body))
+
+    def change_service(self, sid, action, body):
+        row = next((x for x in STORE.get()["services"] if x["id"] == sid), None)
+        if row is None:
+            return self.send_error(404)
+        if action == ["ignore"]:
+            if row["state"] != "new":
+                return self.json({"error": "Only a new service can be ignored."}, 400)
+            return self.save(lambda s: _edit_service(s, sid, state="ignored", on_dock=False))
+        if action == ["remove"]:
+            if row["running"]:
+                return self.json({"error": "Only a service that isn't running can be removed."}, 400)
+            return self.save(lambda s: discovery.remove(s, sid))
+        if action or not body or not set(body) <= {"name", "port", "on_dock"}:
+            return self.json({"error": "bad request"}, 400)
+        changes = dict(body)
+        if "name" in changes:
+            if not isinstance(changes["name"], str):
+                return self.json({"error": "Enter a name."}, 400)
+            changes["name"] = changes["name"].strip()
+        if changes.get("on_dock") is True:
+            changes["state"] = "known"
+        return self.save(lambda s: _edit_service(s, sid, **changes))
+
+    def change_order(self, body):
+        name, ids = body.get("list"), body.get("ids")
+        if name != "dock" and name not in SHOW_LISTS or not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            return self.json({"error": "bad request"}, 400)
+
+        def reorder(s):
+            if name == "dock":   # only the settled rows have an order; new and ignored ones stay after them
+                rows = [x for x in s["services"] if x["state"] == "known"]
+                rest = [x for x in s["services"] if x["state"] != "known"]
+                s["services"] = _in_order(rows, ids) + rest
+            else:
+                items = SHOW_LISTS[name](s)
+                items[:] = _in_order(items, ids)
+        return self.save(reorder)
+
+    def change_show(self, body):
+        name, iid, show = body.get("list"), body.get("id"), body.get("show")
+        if name not in SHOW_LISTS or not isinstance(show, bool):
+            return self.json({"error": "bad request"}, 400)
+
+        def switch(s):
+            row = next((x for x in SHOW_LISTS[name](s) if x["id"] == iid), None)
+            if row is None:
+                raise ValueError("unknown item")
+            row["show"] = show
+        return self.save(switch)
 
     def add_feed(self, body):
         url, topic, lang = body.get("url"), body.get("topic"), body.get("lang")
