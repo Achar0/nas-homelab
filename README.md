@@ -9,6 +9,36 @@ Every Docker stack running on the NAS is mirrored here, with secrets removed, so
 
 ---
 
+## Screenshots
+
+Made-up data unless noted, because this repo is public. All of them, with descriptions, are in [`docs/screenshots`](docs/screenshots/README.md).
+
+**Guest page:** what family and guests see at `:3001`.
+
+![Guest page with status, news and downloads](docs/screenshots/guest.png)
+
+**Owner's page:** alerts in priority order, news, arrivals and the dock, behind the admin login.
+
+![Owner's page with alert cards, news, NAS numbers and dock](docs/screenshots/home.png)
+
+**Mission Control:** performance history, disks and services.
+
+![Mission Control with a processor history chart and service cards](docs/screenshots/mission.png)
+
+**Connections globe:** live connections from home, expanded from Mission Control's rail. This one is the real page, with no addresses or names showing.
+
+![3D globe with arcs from home to live connections, one flagged in red](docs/screenshots/mission-globe.png)
+
+**Netwatch:** where the NAS's connections go, with flagged addresses in red.
+
+![Netwatch world map of connections with a list of addresses](docs/screenshots/netwatch.png)
+
+**Settings:** feeds, alert rules, dock order and account, with new containers appearing by themselves.
+
+![Settings page showing new containers and the dock list](docs/screenshots/settings-services.png)
+
+---
+
 ## Contents
 
 1. [Hardware and OS](#1-hardware-and-os)
@@ -385,6 +415,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-07**
 
+- **Screenshots** of the finished pages in [`docs/screenshots`](docs/screenshots/README.md), with the main ones at the top of this README.
 - **Settings** at `/admin/settings`: news feeds, alert numbers, phone switch, dock/rail/card order, app links, password and log out everywhere (#3). New containers appear there by themselves. The admin login moved from `admin-auth.env` to `admin-auth/auth.json`, so password changes need no restart.
 - **Container names** now carry their port (`autobangumi-7892`), set with `container_name`. `tailscale` has no port, and the UGOS-managed `qbittorrent-app-1` and `firefox-app-1` keep their names. CPU and memory history for AdGuard and Speedtest continues under the new names.
 - **Public summary and admin login:** `:3001` is now a plain summary for family and guests with an **Open UGOS** button; the owner's page moved to `/admin/` behind one password, which also locks Mission Control and Netwatch. Glances gets its own password.
