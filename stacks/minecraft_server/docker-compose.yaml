@@ -3,7 +3,7 @@ version: '3.8'
 services:
   minecraft:
     image: itzg/minecraft-server:latest
-    container_name: minecraft_server
+    container_name: minecraft_server-25565
     environment:
       EULA: "TRUE"
       TYPE: "FABRIC"           # Mod loader type: FABRIC, FORGE, or NEOFORGE

@@ -1,7 +1,7 @@
 services:
   speedtest-tracker:
     image: lscr.io/linuxserver/speedtest-tracker:latest
-    container_name: speedtest-tracker
+    container_name: speedtest-tracker-8765
     restart: unless-stopped
     network_mode: bridge
     ports:

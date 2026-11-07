@@ -1,7 +1,7 @@
 services:
   glances:
     image: nicolargo/glances:latest
-    container_name: glances
+    container_name: glances-61208
     restart: unless-stopped
     pid: host            # see host processes
     network_mode: host   # see the real eth0 traffic

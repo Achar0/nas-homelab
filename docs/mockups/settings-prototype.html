@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings prototype</title>
+<style>
+  :root { color-scheme: dark; --bg:#000; --card:#1c1c1e; --tile:#2c2c2e; --text:#f5f5f7; --t2:#98989d; --t3:#636366; --accent:#0A84FF; --ok:#30D158; --bad:#FF453A; --line:rgba(255,255,255,.08); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif; }
+  .note { max-width:1040px; margin:0 auto; padding:16px 20px 0; color:var(--t2); font-size:13px; }
+  .top { max-width:1040px; margin:0 auto; padding:14px 20px; display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  .top h1 { margin:0; font-size:28px; font-weight:700; letter-spacing:-.02em; }
+  .crumbs { color:var(--t2); font-size:14px; } .crumbs b { color:var(--text); font-weight:500; }
+  .wrap { max-width:1040px; margin:0 auto; padding:0 20px 40px; display:grid; grid-template-columns:210px 1fr; gap:28px; align-items:start; }
+  nav button { display:block; width:100%; text-align:left; padding:9px 12px; margin-bottom:2px; border:0; border-radius:10px; background:none; color:var(--text); font:inherit; cursor:pointer; }
+  nav button:hover { background:var(--card); }
+  nav button.on { background:var(--accent); color:#fff; font-weight:500; }
+  h2 { margin:0 0 4px; font-size:22px; letter-spacing:-.01em; }
+  .sub { margin:0 0 16px; color:var(--t2); font-size:14px; }
+  .group { background:var(--card); border-radius:14px; overflow:hidden; margin-bottom:20px; }
+  .row { display:flex; align-items:center; gap:12px; padding:11px 14px; border-bottom:1px solid var(--line); min-height:48px; flex-wrap:wrap; }
+  .row:last-child { border-bottom:0; }
+  .row .grow { flex:1; min-width:140px; }
+  .row small { display:block; color:var(--t2); font-size:13px; }
+  .meta { color:var(--t2); font-size:13px; }
+  .link { color:var(--accent); background:none; border:0; font:inherit; cursor:pointer; padding:0; text-decoration:none; }
+  .link.danger { color:var(--bad); }
+  .tog { width:42px; height:25px; flex:none; border-radius:13px; background:var(--ok); position:relative; cursor:pointer; border:0; transition:background .15s; }
+  .tog::after { content:""; position:absolute; top:2px; left:19px; width:21px; height:21px; border-radius:50%; background:#fff; transition:left .15s; }
+  .tog.off { background:#48484a; } .tog.off::after { left:2px; }
+  input[type=text],input[type=url],input[type=password],select { background:var(--tile); color:var(--text); border:0; border-radius:8px; padding:8px 10px; font:inherit; }
+  .stepper { display:flex; align-items:center; gap:8px; }
+  .stepper button { width:28px; height:28px; border:0; border-radius:8px; background:var(--tile); color:var(--text); font-size:16px; cursor:pointer; }
+  .stepper span { min-width:66px; text-align:center; font-variant-numeric:tabular-nums; }
+  .add { display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:8px; padding:12px 14px; }
+  .add input,.add select { width:100%; min-width:0; }
+  .btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; font-weight:500; cursor:pointer; }
+  .tabs { display:inline-flex; background:var(--card); border-radius:9px; padding:2px; margin-bottom:12px; }
+  .tabs button { border:0; background:none; color:var(--t2); font:inherit; font-size:13px; padding:5px 12px; border-radius:7px; cursor:pointer; }
+  .tabs button.on { background:var(--tile); color:var(--text); }
+  .handle { color:var(--t3); cursor:grab; user-select:none; }
+  .use { margin-top:4px; }
+  .use button { border:1px solid var(--line); background:none; color:var(--t2); border-radius:18px; padding:7px 14px; font:inherit; font-size:13px; cursor:pointer; }
+  .use button.selected { background:var(--ok); color:#000; border-color:var(--ok); font-weight:500; }
+  [hidden] { display:none!important; }
+  @media (max-width:720px) {
+    .wrap { grid-template-columns:1fr; gap:14px; }
+    nav { display:flex; overflow-x:auto; gap:4px; } nav button { width:auto; white-space:nowrap; }
+    .add { grid-template-columns:1fr 1fr; } .add input { grid-column:1/-1; }
+  }
+</style>
+</head>
+<body>
+<p class="note">Prototype used to agree the Settings outline: nothing is saved. See docs/superpowers/specs/2026-11-07-admin-settings-design.md, which wins where they differ.</p>
+<header class="top">
+  <h1>Settings</h1>
+  <span class="crumbs">Home · Mission Control · <b>Settings</b> · Log out</span>
+</header>
+<div class="wrap">
+  <nav id="nav">
+    <button class="on" data-s="feeds">News feeds</button>
+    <button data-s="alerts">Alert rules</button>
+    <button data-s="dock">Services &amp; dock</button>
+    <button data-s="apps">Apps</button>
+    <button data-s="account">Account</button>
+  </nav>
+  <main>
+    <section id="feeds">
+      <h2>News feeds</h2><p class="sub">What shows up in News on Home and on the guest page. Changes apply on the next refresh.</p>
+      <div class="group" id="feedlist"></div>
+      <div class="group"><div class="add">
+        <input id="f-url" type="url" placeholder="https://example.com/feed.xml" aria-label="Feed address">
+        <select id="f-topic" aria-label="Topic"><option>Tech</option><option>Markets</option><option>Discoveries</option></select>
+        <select id="f-lang" aria-label="Language"><option>EN</option><option>IT</option></select>
+        <button class="btn" id="f-add">Add</button>
+      </div></div>
+    </section>
+
+    <section id="alerts" hidden>
+      <h2>Alert rules</h2><p class="sub">When Home warns you, and when your phone buzzes.</p>
+      <div class="group">
+        <div class="row"><div class="grow">Phone notifications<small>Urgent alerts only</small></div><button class="tog" aria-label="Phone notifications"></button></div>
+      </div>
+      <div class="group">
+        <div class="row"><div class="grow">Free space low<small>Warn below</small></div><div class="stepper" data-v="15" data-step="5" data-u="%"></div></div>
+        <div class="row"><div class="grow">Service down<small>Urgent after</small></div><div class="stepper" data-v="2" data-step="1" data-u=" min"></div></div>
+        <div class="row"><div class="grow">Possible intrusion<small>Urgent after it lasts</small></div><div class="stepper" data-v="3" data-step="1" data-u=" min"></div></div>
+        <div class="row"><div class="grow">Drive running hot<small>Warn above</small></div><div class="stepper" data-v="50" data-step="1" data-u=" °C"></div></div>
+        <div class="row"><div class="grow">Slow internet<small>Warn below this share of the usual speed</small></div><div class="stepper" data-v="50" data-step="5" data-u="%"></div></div>
+      </div>
+    </section>
+
+    <section id="dock" hidden>
+      <h2>Services &amp; dock</h2><p class="sub">Choose what appears and drag to reorder.</p>
+      <div class="tabs" id="tabs"><button class="on">Dock</button><button>Home rail</button><button>Mission Control cards</button></div>
+      <div class="group" id="docklist"></div>
+    </section>
+
+    <section id="apps" hidden>
+      <h2>Apps</h2><p class="sub">Each app keeps its own settings. These just take you there.</p>
+      <div class="group" id="applist"></div>
+    </section>
+
+    <section id="account" hidden>
+      <h2>Account</h2><p class="sub">The one admin password for Home, Mission Control and Netwatch.</p>
+      <div class="group">
+        <div class="row"><div class="grow">Current password</div><input type="password" aria-label="Current password"></div>
+        <div class="row"><div class="grow">New password</div><input type="password" aria-label="New password"></div>
+        <div class="row"><div class="grow">Repeat new password</div><input type="password" aria-label="Repeat new password"></div>
+        <div class="row"><span class="grow"></span><button class="btn">Change password</button></div>
+      </div>
+      <div class="group">
+        <div class="row"><div class="grow">Log out everywhere<small>Every browser and phone will need the password again</small></div><button class="link danger">Log out everywhere</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  // Sections
+  $("nav").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    document.querySelectorAll("#nav button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll("main section").forEach((s) => s.hidden = s.id !== b.dataset.s);
+  };
+  // Feeds: today's list from feeds.json
+  const feeds = [["The Verge","Tech","EN"],["TechCrunch","Tech","EN"],["Ars Technica","Tech","EN"],["MIT Technology Review","Tech","EN"],["Wired Italia","Tech","IT"],["DDay.it","Tech","IT"],["Il Sole 24 Ore","Tech","IT"],["CNBC Markets","Markets","EN"],["CNBC Technology","Markets","EN"],["Il Sole 24 Ore Finanza","Markets","IT"],["ScienceDaily","Discoveries","EN"]];
+  function drawFeeds() {
+    $("feedlist").innerHTML = feeds.map((f, i) => `<div class="row"><button class="tog" aria-label="Show ${f[0]}"></button><div class="grow">${f[0]}</div><span class="meta">${f[1]} · ${f[2]}</span><button class="link danger" data-rm="${i}">Remove</button></div>`).join("");
+  }
+  drawFeeds();
+  $("feedlist").addEventListener("click", (e) => { if (e.target.dataset.rm) { feeds.splice(+e.target.dataset.rm, 1); drawFeeds(); } });
+  $("f-add").onclick = () => {
+    const url = $("f-url").value.trim(); if (!url) return;
+    let name = url; try { name = new URL(url).hostname.replace(/^www\./, ""); } catch {}
+    feeds.push([name, $("f-topic").value, $("f-lang").value]); $("f-url").value = ""; drawFeeds();
+  };
+  // Toggles everywhere
+  document.addEventListener("click", (e) => { if (e.target.classList.contains("tog")) e.target.classList.toggle("off"); });
+  // Steppers
+  document.querySelectorAll(".stepper").forEach((s) => {
+    let v = +s.dataset.v; const step = +s.dataset.step, u = s.dataset.u;
+    s.innerHTML = `<button aria-label="Less">−</button><span>${v}${u}</span><button aria-label="More">+</button>`;
+    const [minus, plus] = s.querySelectorAll("button"), out = s.querySelector("span");
+    minus.onclick = () => { v = Math.max(step, v - step); out.textContent = v + u; };
+    plus.onclick = () => { v += step; out.textContent = v + u; };
+  });
+  // Dock lists
+  const lists = [
+    ["Mission Control","AdGuard","qBittorrent","AutoBangumi","Speedtest","Uptime Kuma","Dockge","Netwatch","Glances","UGOS"],
+    ["CPU","Memory","Temperature","Free space","qBittorrent","AdGuard","Speedtest"],
+    ["qBittorrent","AdGuard","Speedtest","Tailscale","Connections"],
+  ];
+  let cur = 0;
+  function drawDock() {
+    const l = lists[cur];
+    $("docklist").innerHTML = l.map((n, i) => `<div class="row" draggable="true" data-i="${i}"><span class="handle" aria-hidden="true">≡</span><div class="grow">${n}</div><button class="tog" aria-label="Show ${n}"></button></div>`).join("");
+  }
+  drawDock();
+  let from = null;
+  $("docklist").addEventListener("dragstart", (e) => { from = +e.target.dataset.i; });
+  $("docklist").addEventListener("dragover", (e) => e.preventDefault());
+  $("docklist").addEventListener("drop", (e) => {
+    const r = e.target.closest(".row"); if (!r || from === null) return;
+    const l = lists[cur]; l.splice(+r.dataset.i, 0, l.splice(from, 1)[0]); from = null; drawDock();
+  });
+  $("tabs").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    [...$("tabs").children].forEach((x, i) => { x.classList.toggle("on", x === b); if (x === b) cur = i; });
+    drawDock();
+  };
+  // Apps
+  $("applist").innerHTML = ["UGOS","AdGuard","qBittorrent","AutoBangumi","Speedtest","Uptime Kuma","Dockge","Glances"]
+    .map((n) => `<div class="row"><div class="grow">${n}</div><a class="link" href="#" onclick="return false">Open settings ↗</a></div>`).join("");
+</script>
+</body>
+</html>

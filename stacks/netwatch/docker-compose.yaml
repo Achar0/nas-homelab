@@ -2,7 +2,7 @@ services:
   netwatch:
     build: .
     image: netwatch:local
-    container_name: netwatch
+    container_name: netwatch-8790
     restart: unless-stopped
     network_mode: host       # read the NAS's own connection table (/proc/net/tcp)
     env_file:
