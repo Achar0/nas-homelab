@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -10,7 +11,10 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["DATA_DIR"] = tempfile.mkdtemp()
 os.environ["NTFY_URL"] = ""
+import auth  # noqa: E402
 import server  # noqa: E402
+
+KEY = "k" * 64
 
 
 class Proxy(unittest.TestCase):
@@ -93,7 +97,11 @@ class Api(unittest.TestCase):
         cls.httpd.server_close()
 
     def req(self, path, method="GET"):
-        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None)
+        os.environ["SESSION_SECRET"] = KEY
+        os.environ["ADMIN_PASSWORD_HASH"] = "scrypt:2:1:1:00:00"
+        cookie = f"nas_admin={auth.make_token(KEY, time.time() + 60)}"
+        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None,
+                                   headers={"Cookie": cookie})
         try:
             with urllib.request.urlopen(r) as resp:
                 return resp.status, json.loads(resp.read() or b"null")

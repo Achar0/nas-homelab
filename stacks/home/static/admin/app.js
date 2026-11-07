@@ -1,6 +1,6 @@
 // Home page: attention (+ urgent takeover), news carousel, arrivals, compact Mission Control, dock.
-import { esc, formatAgo, greeting, arrowAction } from "./lib.js";
-import { mountCarousel } from "./carousel.js";
+import { esc, formatAgo, greeting, arrowAction } from "../lib.js";
+import { mountCarousel } from "../carousel.js";
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -231,8 +231,8 @@ async function refreshRail() {
 function buildDock() {
   $("dock").innerHTML = DOCK.map((a) => `
     <a class="dock-app" href="${a.href}" target="_blank" rel="noopener" title="${a.name}">
-      ${a.mono ? `<span class="dock-icon mono" style="--icon:url('icons/${a.icon}')"></span>`
-               : `<span class="dock-icon"><img src="icons/${a.icon}" alt=""></span>`}
+      ${a.mono ? `<span class="dock-icon mono" style="--icon:url('../icons/${a.icon}')"></span>`
+               : `<span class="dock-icon"><img src="../icons/${a.icon}" alt=""></span>`}
       <span class="dock-label">${a.name}</span></a>`).join("");
 }
 
