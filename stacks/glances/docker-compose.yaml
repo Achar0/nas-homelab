@@ -6,8 +6,9 @@ services:
     pid: host            # see host processes
     network_mode: host   # see the real eth0 traffic
     environment:
-      GLANCES_OPT: "-w"  # web server + REST API on :61208
+      GLANCES_OPT: "-w --password"  # web server + REST API on :61208, login needed (user "glances")
       TZ: Europe/Rome
     volumes:
       - /etc/os-release:/etc/os-release:ro
       - /volume1:/volume1:ro   # so it can report free space on the RAID volume
+      - ./data:/root/.config/glances   # glances.pwd, the password hash (see README; not in git)
