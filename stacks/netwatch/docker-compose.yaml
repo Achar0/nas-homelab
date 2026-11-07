@@ -5,7 +5,9 @@ services:
     container_name: netwatch
     restart: unless-stopped
     network_mode: host       # read the NAS's own connection table (/proc/net/tcp)
-    env_file: .env           # NTFY_URL (private ntfy topic for phone alerts, not in git)
+    env_file:
+      - .env                 # NTFY_URL (private ntfy topic for phone alerts, not in git)
+      - ../admin-auth.env    # ADMIN_PASSWORD_HASH, SESSION_SECRET (not in git)
     environment:
       PORT: 8790
       HOME_LAT: "45.46"      # map "home" point (Milan)

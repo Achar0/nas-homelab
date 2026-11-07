@@ -20,6 +20,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import maxminddb
 
+import auth
+
 PORT = int(os.environ.get("PORT", "8790"))
 DATA = os.environ.get("DATA_DIR", "/data")
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -29,6 +31,7 @@ NTFY_URL = os.environ.get("NTFY_URL", "")  # e.g. https://ntfy.sh/<topic>; empty
 POLL_S = 5
 HISTORY_S = 24 * 3600
 UA = {"User-Agent": "netwatch-nas/1.0"}
+LOOPBACK = {"127.0.0.1", "::1"}   # Home and Mission Control read /api/state from this machine, no reverse proxy
 
 # Known services: local listening ports (inbound) and common remote ports (outbound)
 LOCAL_SERVICES = {22: "SSH", 53: "DNS", 80: "UGOS", 443: "UGOS", 445: "SMB", 9443: "UGOS",
@@ -345,7 +348,16 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=STATIC, **kw)
 
+    def allowed(self):
+        return self.client_address[0] in LOOPBACK or auth.require_login(self)
+
+    def do_HEAD(self):
+        if self.allowed():
+            super().do_HEAD()
+
     def do_GET(self):
+        if not self.allowed():   # every path: page, vendor files and data
+            return
         if self.path.startswith("/api/state"):
             body = json.dumps(snapshot()).encode()
             self.send_response(200)
