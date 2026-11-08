@@ -21,6 +21,14 @@ Made-up data unless noted, because this repo is public. All of them, with descri
 
 ![Owner's page with alert cards, news, NAS numbers and dock](docs/screenshots/home.png)
 
+**TV idle page:** what the Fire TV shows when nobody is using it, at `/tv`.
+
+![TV page with a large clock, weather, a what-to-bring tip, a news card and new episodes](docs/screenshots/tv.png)
+
+**IPTV lists:** channel status per playlist, with lists added by address or file.
+
+![IPTV page with online, lagging and offline counts for each playlist and a form to add one](docs/screenshots/iptv.png)
+
 **Mission Control:** performance history, disks and services.
 
 ![Mission Control with a processor history chart and service cards](docs/screenshots/mission.png)
@@ -119,7 +127,7 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Service | URL | Stack folder | Purpose |
 |---|---|---|---|
 | AdGuard Home | http://192.168.1.14:8080 | `adguard` | Network-wide ad and tracker blocking (DNS) |
-| Home | http://192.168.1.14:3001 | `home` | Public summary for family and guests; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, dock) needs the admin login (own code) |
+| Home | http://192.168.1.14:3001 | `home` | Public summary for family and guests, the TV idle page at `/tv` and the clean IPTV playlist at `/iptv.m3u`; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, IPTV lists, dock) needs the admin login (own code) |
 | Homepage (retired) | — | `homepage` | Old gethomepage dashboard; only its docker proxy (`dockerproxy-2375`) still runs |
 | qBittorrent | http://192.168.1.14:8888 | UGREEN app (`@appstore`) | Downloads and seeding |
 | AutoBangumi | http://192.168.1.14:7892 | `autobangumi` | Anime RSS (Mikan) → qBittorrent, renames for the Theater |
@@ -266,9 +274,9 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 - Summary text is reduced to plain text on the server.
 - **Archive** (`data/news.db`, SQLite): every story shown is kept for 30 days; stories whose *Read more* link you clicked are kept for 90 days from the last click, with an open count. Pruned on every feed refresh.
 
-**How it works.** One Python process (stdlib only, ~20 MB RAM), `server.py`, with pure modules `feeds.py`, `attention.py` and `arrivals.py`.
+**How it works.** One Python process (stdlib only, ~20 MB RAM), `server.py`, with pure modules `feeds.py`, `attention.py`, `arrivals.py`, `weather.py` and `iptv.py`.
 
-- **Workers:** feeds every 15 min, attention every 30 s, arrivals every 60 s.
+- **Workers:** feeds every 15 min, attention every 30 s, arrivals every 60 s, weather every 30 min, IPTV check every 6 h.
 - **State:** `data/state.json` (incidents, dismissals, acknowledgements).
 - **API:**
   - `GET /api/attention`, `/api/news?topic=`, `/api/arrivals`, and `/api/prom/query` (read-only, instant queries only).
@@ -417,7 +425,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-08**
 
-- **IPTV check:** channel status card and clean playlist at `/iptv.m3u`.
+- **IPTV:** channel status card, clean playlist at `/iptv.m3u` and a page to add, remove and check lists. Fixes from a code review: private addresses are refused, a slow server can't stall the check, empty answers don't count as online and a list that can't be read keeps its last results.
 - **TV idle page** at `/tv`: bilingual clock, weather, tip, news and new episodes on the TV (#4).
 
 **2026-11-07**
