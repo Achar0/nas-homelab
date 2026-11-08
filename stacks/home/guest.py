@@ -4,6 +4,7 @@ Built here on the server so nothing technical can leak: no IP addresses, contain
 alert text or raw torrent names. Security events (Netwatch) never reach this page.
 """
 import attention
+import weather
 
 STALE_S = 300
 REQUIRED_SOURCES = ("kuma", "prom", "restarts")   # all must be readable to claim "all online"
@@ -87,3 +88,32 @@ def summary(inputs, arrivals_data, now, updated, rules=attention.DEFAULT_RULES):
     prom = (inputs or {}).get("prom") or {}
     return {"status": status(inputs, now, updated, rules), "internet_bps": prom.get("speed_last"),
             "free_bytes": prom.get("free_bytes"), "downloads": downloads(arrivals_data)}
+
+
+# ---------- TV page (/tv): Chinese first, a small English line underneath ----------
+
+TV_EPISODES = 3
+ZH_TITLES = {STORAGE: "存储需要检查", BROKEN: "有些服务出了问题", SLOW: "网络有点慢"}
+ZH_NAMES = {"Ad blocking": "广告拦截", "Downloading": "下载", "Episode tracking": "追剧更新", "Speed test": "测速",
+            "Monitoring": "监控", "Remote access": "远程访问", "The media library": "影音库", "The home page": "主页",
+            "A service": "某项服务"}
+
+
+def tv_line(title):
+    """One guest status title in both languages; the only place with this Chinese copy."""
+    name = title.removesuffix(" is down")
+    zh = ZH_NAMES[name] + "暂时不可用" if name in ZH_NAMES else ZH_TITLES.get(title, title)
+    return {"zh": zh, "en": title}
+
+
+def tv_status(line):
+    """The status line only appears when something is wrong: `ok` and `unknown` show nothing."""
+    return tv_line(line["title"]) if line["state"] == "warn" else None
+
+
+def tv(inputs, arrivals_data, weather_data, now, updated, rules=attention.DEFAULT_RULES):
+    d = downloads(arrivals_data)
+    arrived = [{"show": a["show"], "ep": a["ep"], "at": a["at"]} for a in d["arrived"]]
+    active = [{"show": a["show"], "ep": a["ep"], "at": None} for a in d["downloading"]]
+    return {"status": tv_status(status(inputs, now, updated, rules)), "weather": weather.fresh(weather_data, now),
+            "episodes": (arrived + active)[:TV_EPISODES]}
