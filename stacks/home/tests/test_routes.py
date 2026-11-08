@@ -134,6 +134,20 @@ class GuestRoutes(Base):
         self.assertEqual(d["status"]["title"], "Internet is slow right now")
         self.assertEqual(self.call("/api/public/summary?demo=nope")[0], 200)
 
+    def test_iptv_playlist_is_public(self):
+        self.addCleanup(server.LATEST.__setitem__, "iptv", server.LATEST["iptv"])
+        server.LATEST["iptv"] = {"playlist": "#EXTM3U\n#EXTINF:-1,A\nhttp://a/1\n", "counts": None, "checked": 0}
+        status, _, data = self.call("/iptv.m3u")
+        self.assertEqual((status, data), (200, b"#EXTM3U\n#EXTINF:-1,A\nhttp://a/1\n"))
+
+    def test_iptv_playlist_before_the_first_check(self):
+        self.addCleanup(server.LATEST.__setitem__, "iptv", server.LATEST["iptv"])
+        server.LATEST["iptv"] = {"playlist": "", "counts": None, "checked": 0}
+        self.assertEqual(self.call("/iptv.m3u")[0], 404)
+
+    def test_iptv_status_needs_the_login(self):
+        self.assertIn(self.call("/api/iptv")[0], (302, 401))
+
     def test_tv_page_is_public(self):
         status, _, data = self.call("/tv")
         self.assertEqual(status, 200)

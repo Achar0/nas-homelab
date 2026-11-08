@@ -212,6 +212,7 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 **Who sees what.** Design: [`docs/superpowers/specs/2026-11-07-public-summary-design.md`](docs/superpowers/specs/2026-11-07-public-summary-design.md).
 
 - **Guests at `/`:** plain-language status (only "Everything's running" when every source could be read), internet speed, free storage, news without the *Opened* tab, downloads, **Open UGOS** (each person logs in with their own UGOS account) and **Admin**. Recognised episodes appear by name; everything else is only counted ("1 other download"). Intrusion alerts never reach this page. All of it comes from `/api/public/summary` and `/api/news`.
+- **IPTV check:** every 6 h the NAS downloads a real video segment from each channel of the playlists in `IPTV_LISTS` (`.env`). The rail card shows how many are online, lagging (segment under 1.5× real time) or offline, and `/iptv.m3u` serves only the fast ones. If fewer than 20 pass, the previous playlist is kept.
 - **TV at `/tv`:** the TV idle screen, public and without buttons. Clock, Milan weather from Open-Meteo (the NAS fetches it every 30 min; hidden after 3 h without data), one what-to-bring tip, rotating news in its original language and recognised episodes. Labels are Simplified Chinese with a small English line. The status line appears only when something is wrong. Data from `/api/public/tv` and `/api/news`. Design: [`docs/superpowers/specs/2026-11-08-tv-idle-screen-design.md`](docs/superpowers/specs/2026-11-08-tv-idle-screen-design.md).
 - **Owner at `/admin/`:** everything described below, behind the admin login.
 
@@ -416,6 +417,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-08**
 
+- **IPTV check:** channel status card and clean playlist at `/iptv.m3u`.
 - **TV idle page** at `/tv`: bilingual clock, weather, tip, news and new episodes on the TV (#4).
 
 **2026-11-07**
