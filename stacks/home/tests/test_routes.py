@@ -134,6 +134,39 @@ class GuestRoutes(Base):
         self.assertEqual(d["status"]["title"], "Internet is slow right now")
         self.assertEqual(self.call("/api/public/summary?demo=nope")[0], 200)
 
+    def test_tv_page_is_public(self):
+        status, _, data = self.call("/tv")
+        self.assertEqual(status, 200)
+        self.assertIn(b'lang="zh-CN"', data)
+
+    def test_tv_data_contains_nothing_technical(self):
+        now = time.time()
+        server.LATEST["inputs"] = {
+            "kuma": {"AdGuard": 1}, "restarts": {},
+            "netwatch": {"items": [{"ip": "203.0.113.7", "flag": ["bad"], "scope": "internet", "dir": "in", "live": True, "last": now}]},
+            "prom": {"md_active": 2, "md_required": 2, "smart_status": {"sda": 1}, "drive_temp": {"sda": 35}, "free_ratio": 0.5, "free_bytes": 3.2e12, "speed_last": 9e8, "speed_median": 9e8}}
+        server.LATEST["inputs_at"] = now
+        server.LATEST["arrivals"] = {"arrived": [{"show": "Some.Movie.2024", "ep": "", "at": now, "known": False},
+                                                 {"show": "Example Show", "ep": "E05", "at": now, "known": True}],
+                                     "downloading": []}
+        status, _, data = self.call("/api/public/tv")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Example Show", json.dumps(json.loads(data)).encode())
+        for secret in (b"203.0.113.7", b"Some.Movie", b"free_bytes", b"internet_bps"):
+            self.assertNotIn(secret, data)
+
+    def test_tv_data_at_first_boot(self):
+        saved = {k: server.LATEST[k] for k in ("inputs", "inputs_at", "arrivals", "weather")}
+        self.addCleanup(server.LATEST.update, saved)
+        server.LATEST.update(inputs=None, inputs_at=0, arrivals={"arrived": [], "downloading": []}, weather=None)
+        d = json.loads(self.call("/api/public/tv")[2])
+        self.assertEqual((d["status"], d["weather"], d["episodes"]), (None, None, []))
+
+    def test_tv_demo_overrides_only_the_status(self):
+        self.assertEqual(json.loads(self.call("/api/public/tv?demo=slow")[2])["status"]["zh"], "网络有点慢")
+        self.assertIsNone(json.loads(self.call("/api/public/tv?demo=unknown")[2])["status"])
+        self.assertEqual(self.call("/api/public/tv?demo=nope")[0], 200)
+
 
 class AdminRoutes(Base):
     def test_landing_goes_to_the_owner_page(self):

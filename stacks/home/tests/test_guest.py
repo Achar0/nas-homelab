@@ -181,5 +181,39 @@ class FollowsTheRules(unittest.TestCase):
 
 
 
+EMPTY = {"arrived": [], "downloading": []}
+
+
+class Tv(unittest.TestCase):
+    def test_tv_hides_status_unless_something_is_wrong(self):
+        self.assertIsNone(guest.tv(inputs(), EMPTY, None, NOW, NOW)["status"])
+        self.assertIsNone(guest.tv(None, EMPTY, None, NOW, NOW)["status"])  # unknown, first boot
+
+    def test_tv_status_is_bilingual(self):
+        s = guest.tv(inputs(kuma={"AdGuard": 0}), EMPTY, None, NOW, NOW)["status"]
+        self.assertEqual(s, {"zh": "广告拦截暂时不可用", "en": "Ad blocking is down"})
+
+    def test_every_status_title_has_chinese(self):
+        titles = [guest.STORAGE, guest.BROKEN, guest.SLOW] + [p + " is down" for _, p in guest.PLAIN_NAMES] + ["A service is down"]
+        for title in titles:
+            self.assertNotEqual(guest.tv_line(title)["zh"], title)
+
+    def test_tv_episodes_known_only_three_at_most_arrived_first(self):
+        data = {"arrived": [{"show": f"Show {i}", "ep": "E01", "at": NOW, "known": True} for i in range(2)]
+                + [{"show": "Some.Movie", "ep": "", "at": NOW, "known": False}],
+                "downloading": [{"show": f"Next {i}", "ep": "E02", "progress": .5, "eta": 9, "stalled": False, "known": True} for i in range(2)]}
+        eps = guest.tv(inputs(), data, None, NOW, NOW)["episodes"]
+        self.assertEqual([e["show"] for e in eps], ["Show 0", "Show 1", "Next 0"])
+        self.assertEqual(eps[0]["at"], NOW)
+        self.assertIsNone(eps[2]["at"])
+
+    def test_tv_drops_stale_weather(self):
+        self.assertIsNone(guest.tv(inputs(), EMPTY, {"fetched": NOW - 3 * 3600 - 1}, NOW, NOW)["weather"])
+
+    def test_tv_keeps_fresh_weather(self):
+        w = {"fetched": NOW - 60}
+        self.assertEqual(guest.tv(inputs(), EMPTY, w, NOW, NOW)["weather"], w)
+
+
 if __name__ == "__main__":
     unittest.main()

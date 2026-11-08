@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home TV</title>
+<link rel="stylesheet" href="/tv/tv.css">
+</head>
+<body>
+<main id="stage">
+  <section class="left">
+    <div id="clock" class="clock"></div>
+    <div class="date"><span id="date-zh"></span><span id="date-en" class="en"></span></div>
+    <div id="weather" class="weather" hidden>
+      <div id="wx-icon" class="wx-icon"></div>
+      <div class="wx-now"><b id="wx-temp"></b><span id="wx-zh"></span><span id="wx-en" class="en"></span></div>
+      <div id="wx-hours" class="wx-hours"></div>
+    </div>
+    <div id="tip" class="tip" hidden>
+      <span id="tip-icon" class="tip-icon"></span>
+      <div><span id="tip-zh"></span><span id="tip-en" class="en"></span></div>
+    </div>
+  </section>
+
+  <section class="right">
+    <div id="status" class="status" hidden><i></i><div><span id="status-zh"></span><span id="status-en" class="en"></span></div></div>
+    <article id="news" class="news" hidden>
+      <div id="news-tag" class="tag"></div>
+      <h1 id="news-title"></h1>
+      <p id="news-summary"></p>
+    </article>
+    <div id="next" class="next" hidden>下一条 / Next: <b id="next-title"></b></div>
+  </section>
+
+  <footer id="arrivals" class="arrivals" hidden>
+    <span class="label">最新到达 · Just arrived</span>
+    <div id="episodes" class="episodes"></div>
+  </footer>
+</main>
+<script src="/tv/tv.js"></script>
+</body>
+</html>

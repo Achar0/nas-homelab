@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import arrivals
@@ -30,6 +31,7 @@ import feeds
 import guest
 import news_db
 import settings
+import weather
 
 E = os.environ.get
 PORT = int(E("PORT", "3001"))
@@ -61,7 +63,7 @@ os.makedirs(DATA, exist_ok=True)
 STORE = settings.Store(SETTINGS_PATH, os.path.join(HERE, "feeds.json"))
 STATE = {}
 LATEST = {"attention": {"items": [], "urgent": None, "sources_down": []}, "news": [], "news_errors": [],
-          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0}
+          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0, "weather": None}
 
 
 def alert_rules():
@@ -288,6 +290,11 @@ def arrivals_tick():
     LATEST["arrivals"] = arrivals.build(qbt.torrents(), time.time())
 
 
+def weather_tick():
+    # A failed fetch raises here, so the previous weather stays until weather.fresh() retires it
+    LATEST["weather"] = weather.build(json.loads(get_limited(weather.URL)), datetime.now(), time.time())
+
+
 def feeds_loop():
     while True:
         FEEDS_WAKE.clear()   # before fetching: a change made during the fetch runs it again
@@ -392,6 +399,13 @@ class Handler(SimpleHTTPRequestHandler):
             data = guest.summary(LATEST["inputs"], LATEST["arrivals"], time.time(), LATEST["inputs_at"], alert_rules())
             demo = guest.DEMO.get((q.get("demo") or [""])[0])
             return self.json({**data, "status": demo} if demo else data)
+        if path == "/tv":   # the TV's WebView gets the page directly, without a redirect to /tv/
+            self.path = "/tv/index.html"
+            return super().do_GET()
+        if path == "/api/public/tv":
+            data = guest.tv(LATEST["inputs"], LATEST["arrivals"], LATEST["weather"], time.time(), LATEST["inputs_at"], alert_rules())
+            demo = guest.DEMO.get((q.get("demo") or [""])[0])
+            return self.json({**data, "status": guest.tv_status(demo)} if demo else data)
         if path == "/api/news" and "opened" not in q.get("topic", []):
             topic = (q.get("topic") or ["all"])[0]
             items = [i for i in LATEST["news"] if topic == "all" or i["topic"] == topic]
@@ -725,7 +739,7 @@ def make_server(port):
 if __name__ == "__main__":
     load_state()
     auth.startup_check(log)
-    for fn, every in ((attention_tick, 30), (arrivals_tick, 60)):
+    for fn, every in ((attention_tick, 30), (arrivals_tick, 60), (weather_tick, 1800)):
         threading.Thread(target=loop, args=(fn, every), daemon=True).start()
     threading.Thread(target=feeds_loop, daemon=True).start()
     log("home on port", PORT)
