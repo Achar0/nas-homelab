@@ -162,7 +162,17 @@ function buildRail() {
   const tile = (x, i, grp) => `<a class="tile" href="${at(8800)}/${x.mc}" target="_blank" rel="noopener">
     <span class="k">${x.k}</span><span class="v" id="r-${grp}${i}">—</span>${x.s ? `<span class="s">${x.s}</span>` : ""}</a>`;
   $("rail").innerHTML = `<h2>NAS</h2><div class="grid2">${RAIL.map((x, i) => tile(x, i, "a")).join("")}</div>` +
-    SERVICES.map((x, i) => tile(x, i, "b")).join("");   // Mission Control itself is in the dock
+    SERVICES.map((x, i) => tile(x, i, "b")).join("") +   // Mission Control itself is in the dock
+    `<div class="tile"><span class="k">IPTV</span><span class="v" id="r-iptv">—</span><span class="s" id="r-iptv-s">channels online</span></div>`;
+  refreshIptv();
+}
+
+// Online / total as the one key number; lag and offline underneath
+async function refreshIptv() {
+  const d = await getJSON("/api/iptv").catch(() => null);
+  if (!d?.counts || !$("r-iptv")) return;
+  $("r-iptv").textContent = `${d.counts.online} / ${d.counts.total}`;
+  $("r-iptv-s").textContent = `online · ${d.counts.lag} lag · ${d.counts.offline} offline`;
 }
 
 async function promValue(q) {
@@ -213,6 +223,7 @@ const every = (ms, fn) => setInterval(() => { if (!document.hidden) fn(); }, ms)
 every(15000, refreshAttention);
 every(15000, refreshRail);
 every(60000, refreshArrivals);
+every(300000, refreshIptv);
 every(300000, () => news.refresh(true));
 every(30000, renderHello);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshAttention(); refreshRail(); } });

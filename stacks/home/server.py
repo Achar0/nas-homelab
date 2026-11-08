@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -29,6 +30,7 @@ import auth
 import discovery
 import feeds
 import guest
+import iptv
 import news_db
 import settings
 import weather
@@ -63,7 +65,8 @@ os.makedirs(DATA, exist_ok=True)
 STORE = settings.Store(SETTINGS_PATH, os.path.join(HERE, "feeds.json"))
 STATE = {}
 LATEST = {"attention": {"items": [], "urgent": None, "sources_down": []}, "news": [], "news_errors": [],
-          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0, "weather": None}
+          "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0, "weather": None,
+          "iptv": {"playlist": "", "counts": None, "checked": 0}}
 
 
 def alert_rules():
@@ -290,6 +293,59 @@ def arrivals_tick():
     LATEST["arrivals"] = arrivals.build(qbt.torrents(), time.time())
 
 
+IPTV_LISTS = [u for u in E("IPTV_LISTS", "").split(",") if u]   # playlists to check; personal, so in .env
+IPTV_PATH = os.path.join(DATA, "iptv.json")
+IPTV_EVERY = 6 * 3600
+IPTV_WORKERS = 8
+
+
+def iptv_fetch(url, limit, timeout):
+    """For iptv.probe: stops reading at `limit` and gives up after `timeout` seconds in total."""
+    start, chunks, size = time.monotonic(), [], 0
+    req = urllib.request.Request(urllib.parse.quote(url, safe=":/?&=%#+,;@~-_.!*()[]"), headers={"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"})
+    with urllib.request.urlopen(req, timeout=min(timeout, 10)) as r:
+        final = r.geturl()
+        while size < limit:
+            if time.monotonic() - start > timeout:
+                raise TimeoutError(url)
+            chunk = r.read1(65536)
+            if not chunk:
+                break
+            size += len(chunk)
+            chunks.append(chunk)
+    return b"".join(chunks), time.monotonic() - start, final
+
+
+def iptv_tick(now=None):
+    """Checks every channel. Runs often but only works every IPTV_EVERY, so restarts don't repeat the downloads."""
+    now = now or time.time()
+    if not IPTV_LISTS or now - LATEST["iptv"]["checked"] < IPTV_EVERY:
+        return
+    rows = []
+    for url in IPTV_LISTS:
+        try:
+            rows += iptv.parse(iptv_fetch(url, 5_000_000, 30)[0].decode("utf-8", "replace"))
+        except Exception as e:  # noqa: BLE001 - one bad list must not stop the other
+            log("iptv list failed:", type(e).__name__)
+    with ThreadPoolExecutor(IPTV_WORKERS) as pool:
+        states = list(pool.map(lambda r: iptv.probe(r["url"], iptv_fetch), rows))
+    rows = [{**r, "state": s} for r, s in zip(rows, states)]
+    playlist = iptv.clean(rows) if iptv.usable(rows) else LATEST["iptv"]["playlist"]
+    LATEST["iptv"] = {"playlist": playlist, "counts": iptv.counts(rows), "checked": now}
+    tmp = IPTV_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(LATEST["iptv"], f)
+    os.replace(tmp, IPTV_PATH)
+
+
+def load_iptv():
+    try:
+        with open(IPTV_PATH, encoding="utf-8") as f:
+            LATEST["iptv"] = json.load(f)
+    except (OSError, ValueError):
+        pass
+
+
 def weather_tick():
     # A failed fetch raises here, so the previous weather stays until weather.fresh() retires it
     LATEST["weather"] = weather.build(json.loads(get_limited(weather.URL)), datetime.now(), time.time())
@@ -402,6 +458,15 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/tv":   # the TV's WebView gets the page directly, without a redirect to /tv/
             self.path = "/tv/index.html"
             return super().do_GET()
+        if path == "/iptv.m3u":
+            body = LATEST["iptv"]["playlist"].encode()
+            if not body:
+                return self.send_error(404)
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/x-mpegurl; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
         if path == "/api/public/tv":
             data = guest.tv(LATEST["inputs"], LATEST["arrivals"], LATEST["weather"], time.time(), LATEST["inputs_at"], alert_rules())
             demo = guest.DEMO.get((q.get("demo") or [""])[0])
@@ -439,6 +504,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/news":   # stories whose link you opened, last 30 days, most recent first
             items = news_db.history(NEWS_DB, opened_only=True, since=time.time() - 30 * 86400)
             return self.json({"items": items, "updated": time.time(), "errors": []})
+        if path == "/api/iptv":
+            return self.json({"counts": LATEST["iptv"]["counts"], "checked": LATEST["iptv"]["checked"]})
         if path == "/api/arrivals":
             return self.json(LATEST["arrivals"])
         if path.startswith("/api/prom/"):
@@ -738,8 +805,9 @@ def make_server(port):
 
 if __name__ == "__main__":
     load_state()
+    load_iptv()
     auth.startup_check(log)
-    for fn, every in ((attention_tick, 30), (arrivals_tick, 60), (weather_tick, 1800)):
+    for fn, every in ((attention_tick, 30), (arrivals_tick, 60), (weather_tick, 1800), (iptv_tick, 300)):
         threading.Thread(target=loop, args=(fn, every), daemon=True).start()
     threading.Thread(target=feeds_loop, daemon=True).start()
     log("home on port", PORT)
