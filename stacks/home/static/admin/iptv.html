@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>IPTV</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin/settings.css">
+  <style>
+    .iptv { max-width: 62rem; margin-inline: auto; padding: max(1.5rem, env(safe-area-inset-top)) 1rem 3rem; }
+    .iptv .total { font-size: 2rem; font-weight: 600; margin: 0.4rem 0 0; }
+    .iptv .line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .list { padding: 0.9rem 1rem; }
+    .list + .list { border-top: 1px solid var(--tile); }
+    .list h2 { margin: 0; font-size: 1.0625rem; overflow-wrap: anywhere; }
+    .list .acts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
+    .list button, .iptv .plain { background: var(--tile); color: inherit; border: 0; border-radius: 8px; padding: 0.4rem 0.75rem; font: inherit; cursor: pointer; }
+    .err { color: var(--warn); }
+    .chans { margin-top: 0.7rem; max-height: 22rem; overflow-y: auto; }
+    .chan { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.3rem 0; font-size: 0.9375rem; }
+    .chan b { font-weight: 400; overflow-wrap: anywhere; }
+    .chan span { flex: none; }
+    .online { color: var(--ok, #30d158); } .lag { color: var(--warn); } .offline { color: var(--text-3); }
+    .adding { display: grid; gap: 0.6rem; padding: 1rem; }
+    .adding input[type=url], .adding input[type=text] { width: 100%; box-sizing: border-box; }
+    .adding input[type=url], .adding input[type=text] { border: 0; border-radius: 8px; padding: 0.6rem 0.75rem; background: var(--tile); color: inherit; font: inherit; }
+    .adding .acts { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    #msg { min-height: 1.3em; color: var(--text-2); }
+  </style>
+</head>
+<body>
+  <div class="iptv">
+    <header class="set-head">
+      <h1>IPTV</h1>
+      <p><a href="/admin/">Home</a> · <a href="/iptv.m3u">Clean playlist</a></p>
+    </header>
+    <div class="line">
+      <div>
+        <p class="total" id="total">—</p>
+        <p class="sub" id="detail"></p>
+      </div>
+      <button class="btn" id="check">Check now</button>
+    </div>
+    <section class="group" id="lists" aria-label="Playlists"></section>
+    <h2>Add a list</h2>
+    <form class="group adding" id="add">
+      <input id="url" type="url" placeholder="https://…/list.m3u8" aria-label="Playlist address">
+      <input id="name" type="text" maxlength="80" placeholder="Name (optional)" aria-label="Name">
+      <div class="acts">
+        <button class="btn" type="submit">Add address</button>
+        <label class="plain">Upload a file<input id="file" type="file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl,text/plain" hidden></label>
+      </div>
+      <p id="msg" role="status"></p>
+    </form>
+  </div>
+  <script type="module" src="/admin/iptv.js"></script>
+</body>
+</html>

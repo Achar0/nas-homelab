@@ -21,6 +21,14 @@ Made-up data unless noted, because this repo is public. All of them, with descri
 
 ![Owner's page with alert cards, news, NAS numbers and dock](docs/screenshots/home.png)
 
+**TV idle page:** what the Fire TV shows when nobody is using it, at `/tv`.
+
+![TV page with a large clock, weather, a what-to-bring tip, a news card and new episodes](docs/screenshots/tv.png)
+
+**IPTV lists:** channel status per playlist, with lists added by address or file.
+
+![IPTV page with online, lagging and offline counts for each playlist and a form to add one](docs/screenshots/iptv.png)
+
 **Mission Control:** performance history, disks and services.
 
 ![Mission Control with a processor history chart and service cards](docs/screenshots/mission.png)
@@ -119,7 +127,7 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Service | URL | Stack folder | Purpose |
 |---|---|---|---|
 | AdGuard Home | http://192.168.1.14:8080 | `adguard` | Network-wide ad and tracker blocking (DNS) |
-| Home | http://192.168.1.14:3001 | `home` | Public summary for family and guests; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, dock) needs the admin login (own code) |
+| Home | http://192.168.1.14:3001 | `home` | Public summary for family and guests, the TV idle page at `/tv` and the clean IPTV playlist at `/iptv.m3u`; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, IPTV lists, dock) needs the admin login (own code) |
 | Homepage (retired) | — | `homepage` | Old gethomepage dashboard; only its docker proxy (`dockerproxy-2375`) still runs |
 | qBittorrent | http://192.168.1.14:8888 | UGREEN app (`@appstore`) | Downloads and seeding |
 | AutoBangumi | http://192.168.1.14:7892 | `autobangumi` | Anime RSS (Mikan) → qBittorrent, renames for the Theater |
@@ -212,7 +220,7 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 **Who sees what.** Design: [`docs/superpowers/specs/2026-11-07-public-summary-design.md`](docs/superpowers/specs/2026-11-07-public-summary-design.md).
 
 - **Guests at `/`:** plain-language status (only "Everything's running" when every source could be read), internet speed, free storage, news without the *Opened* tab, downloads, **Open UGOS** (each person logs in with their own UGOS account) and **Admin**. Recognised episodes appear by name; everything else is only counted ("1 other download"). Intrusion alerts never reach this page. All of it comes from `/api/public/summary` and `/api/news`.
-- **IPTV check:** every 6 h the NAS downloads a real video segment from each channel of the playlists in `IPTV_LISTS` (`.env`). The rail card shows how many are online, lagging (segment under 1.5× real time) or offline, and `/iptv.m3u` serves only the fast ones. If fewer than 20 pass, the previous playlist is kept.
+- **IPTV check:** every 6 h the NAS downloads a real video segment from each channel of the managed playlists. The rail card shows how many are online, lagging (segment under 1.5× real time) or offline and opens `/admin/iptv.html`, where lists are added by address or file, removed and checked on demand. `/iptv.m3u` serves only the fast channels. If fewer than 20 pass, the previous playlist is kept. `IPTV_LISTS` in `.env` only fills the first lists; the checker refuses private addresses, so a list can't reach the NAS's own services.
 - **TV at `/tv`:** the TV idle screen, public and without buttons. Clock, Milan weather from Open-Meteo (the NAS fetches it every 30 min; hidden after 3 h without data), one what-to-bring tip, rotating news in its original language and recognised episodes. Labels are Simplified Chinese with a small English line. The status line appears only when something is wrong. Data from `/api/public/tv` and `/api/news`. Design: [`docs/superpowers/specs/2026-11-08-tv-idle-screen-design.md`](docs/superpowers/specs/2026-11-08-tv-idle-screen-design.md).
 - **Owner at `/admin/`:** everything described below, behind the admin login.
 
@@ -266,9 +274,9 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 - Summary text is reduced to plain text on the server.
 - **Archive** (`data/news.db`, SQLite): every story shown is kept for 30 days; stories whose *Read more* link you clicked are kept for 90 days from the last click, with an open count. Pruned on every feed refresh.
 
-**How it works.** One Python process (stdlib only, ~20 MB RAM), `server.py`, with pure modules `feeds.py`, `attention.py` and `arrivals.py`.
+**How it works.** One Python process (stdlib only, ~20 MB RAM), `server.py`, with pure modules `feeds.py`, `attention.py`, `arrivals.py`, `weather.py` and `iptv.py`.
 
-- **Workers:** feeds every 15 min, attention every 30 s, arrivals every 60 s.
+- **Workers:** feeds every 15 min, attention every 30 s, arrivals every 60 s, weather every 30 min, IPTV check every 6 h.
 - **State:** `data/state.json` (incidents, dismissals, acknowledgements).
 - **API:**
   - `GET /api/attention`, `/api/news?topic=`, `/api/arrivals`, and `/api/prom/query` (read-only, instant queries only).
@@ -417,7 +425,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-08**
 
-- **IPTV check:** channel status card and clean playlist at `/iptv.m3u`.
+- **IPTV:** channel status card, clean playlist at `/iptv.m3u` and a page to add, remove and check lists. Fixes from a code review: private addresses are refused, a slow server can't stall the check, empty answers don't count as online and a list that can't be read keeps its last results.
 - **TV idle page** at `/tv`: bilingual clock, weather, tip, news and new episodes on the TV (#4).
 
 **2026-11-07**

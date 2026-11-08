@@ -163,7 +163,7 @@ function buildRail() {
     <span class="k">${x.k}</span><span class="v" id="r-${grp}${i}">—</span>${x.s ? `<span class="s">${x.s}</span>` : ""}</a>`;
   $("rail").innerHTML = `<h2>NAS</h2><div class="grid2">${RAIL.map((x, i) => tile(x, i, "a")).join("")}</div>` +
     SERVICES.map((x, i) => tile(x, i, "b")).join("") +   // Mission Control itself is in the dock
-    `<div class="tile"><span class="k">IPTV</span><span class="v" id="r-iptv">—</span><span class="s" id="r-iptv-s">channels online</span></div>`;
+    `<a class="tile" href="/admin/iptv.html"><span class="k">IPTV</span><span class="v" id="r-iptv">—</span><span class="s" id="r-iptv-s">channels online</span></a>`;
   refreshIptv();
 }
 

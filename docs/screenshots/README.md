@@ -10,6 +10,8 @@ Mission Control's Connections card is hidden in the sample shots, because the sc
 | [`guest-phone.png`](guest-phone.png) | The guest page on a phone |
 | [`login.png`](login.png) | The admin login sheet |
 | [`home.png`](home.png) | The owner's page at `/admin/`: alert cards in priority order, news, arrivals, NAS numbers, dock |
+| [`tv.png`](tv.png) | The TV idle page at `/tv`: clock, weather, tip, news and new episodes |
+| [`iptv.png`](iptv.png) | IPTV lists at `/admin/iptv.html`: status per list, add by address or file |
 | [`takeover.png`](takeover.png) | Full-screen takeover for an urgent alert |
 | [`mission.png`](mission.png) | Mission Control: performance history, disks and service cards |
 | [`mission-card.png`](mission-card.png) | A Mission Control service card, expanded |
