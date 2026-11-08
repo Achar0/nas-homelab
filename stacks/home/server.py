@@ -15,12 +15,12 @@ import http.client
 import http.cookiejar
 import json
 import os
+import socket
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -54,6 +54,7 @@ UA = {"User-Agent": "nas-home/1.0 (personal feed reader)"}
 ADMIN_STATIC = os.path.join(STATIC, "admin")
 LOGIN_BODY_LIMIT = 4096
 SETTINGS_BODY_LIMIT = 65536
+IPTV_BODY_LIMIT = 6_000_000      # a playlist file, as JSON text
 FEED_NAME_LIMIT = 80
 LOOPBACK = {"127.0.0.1", "::1"}   # Mission Control and Netwatch on this machine; no reverse proxy runs in front
 SHOW_LISTS = {"rail_nas": lambda s: s["rail"]["nas"], "rail_services": lambda s: s["rail"]["services"], "cards": lambda s: s["cards"]}
@@ -66,7 +67,7 @@ STORE = settings.Store(SETTINGS_PATH, os.path.join(HERE, "feeds.json"))
 STATE = {}
 LATEST = {"attention": {"items": [], "urgent": None, "sources_down": []}, "news": [], "news_errors": [],
           "news_updated": 0, "arrivals": {"arrived": [], "downloading": []}, "inputs": None, "inputs_at": 0, "weather": None,
-          "iptv": {"playlist": "", "counts": None, "checked": 0}}
+          "iptv": {"lists": [], "playlist": "", "counts": None, "checked": 0, "checking": False}}
 
 
 def alert_rules():
@@ -123,23 +124,8 @@ def _download(url, limit, deadline):
 
 
 def get_limited(url, limit=FEED_LIMIT, deadline=FEED_DEADLINE):
-    """The whole fetch within the deadline. In a thread because redirects, slow headers and DNS happen
-    inside urlopen, out of reach of any check between reads. A late thread ends with its socket timeout."""
-    box = {}
-
-    def work():
-        try:
-            box["data"] = _download(url, limit, deadline)
-        except Exception as e:  # noqa: BLE001 - handed to the caller below
-            box["error"] = e
-    t = threading.Thread(target=work, daemon=True)
-    t.start()
-    t.join(deadline)
-    if t.is_alive():
-        raise TimeoutError(f"{url}: slower than {deadline} s")
-    if "error" in box:
-        raise box["error"]
-    return box["data"]
+    """The whole fetch within the deadline (see _within)."""
+    return _within(deadline, lambda: _download(url, limit, deadline))
 
 
 def prom_vector(query):
@@ -293,57 +279,211 @@ def arrivals_tick():
     LATEST["arrivals"] = arrivals.build(qbt.torrents(), time.time())
 
 
-IPTV_LISTS = [u for u in E("IPTV_LISTS", "").split(",") if u]   # playlists to check; personal, so in .env
+IPTV_SEED = [u for u in E("IPTV_LISTS", "").split(",") if u]   # only used once, to fill the managed lists
 IPTV_PATH = os.path.join(DATA, "iptv.json")
+IPTV_FILES = os.path.join(DATA, "iptv-files")
 IPTV_EVERY = 6 * 3600
-IPTV_WORKERS = 8
+IPTV_RETRY = 1800                # after a list couldn't be read: sooner than the next regular check
+IPTV_MAX_LISTS = 20
+IPTV_LOCK = threading.Lock()
+IPTV_WAKE = threading.Event()
+IPTV_WANT = set()                # list ids to check now; "all" for every one
 
 
-def iptv_fetch(url, limit, timeout):
-    """For iptv.probe: stops reading at `limit` and gives up after `timeout` seconds in total."""
-    start, chunks, size = time.monotonic(), [], 0
-    req = urllib.request.Request(urllib.parse.quote(url, safe=":/?&=%#+,;@~-_.!*()[]"), headers={"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"})
-    with urllib.request.urlopen(req, timeout=min(timeout, 10)) as r:
-        final = r.geturl()
-        while size < limit:
-            if time.monotonic() - start > timeout:
-                raise TimeoutError(url)
-            chunk = r.read1(65536)
-            if not chunk:
-                break
-            size += len(chunk)
-            chunks.append(chunk)
-    return b"".join(chunks), time.monotonic() - start, final
+def _resolve(host):
+    return {a[4][0] for a in socket.getaddrinfo(host, None)}
 
 
-def iptv_tick(now=None):
-    """Checks every channel. Runs often but only works every IPTV_EVERY, so restarts don't repeat the downloads."""
-    now = now or time.time()
-    if not IPTV_LISTS or now - LATEST["iptv"]["checked"] < IPTV_EVERY:
-        return
-    rows = []
-    for url in IPTV_LISTS:
+class _PublicRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not iptv.is_public(newurl, _resolve):
+            raise urllib.error.URLError("redirect to a private address")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+IPTV_OPENER = urllib.request.OpenerDirector()   # no file: or ftp: handlers, unlike urlopen's default
+for _handler in (urllib.request.HTTPHandler(), urllib.request.HTTPSHandler(), urllib.request.HTTPDefaultErrorHandler(),
+                 urllib.request.HTTPErrorProcessor(), _PublicRedirects()):
+    IPTV_OPENER.add_handler(_handler)
+
+
+def _within(deadline, work):
+    """work() within the deadline. In a thread because redirects, slow headers and DNS happen inside urlopen,
+    out of reach of any check between reads. A late thread ends with its socket timeout."""
+    box = {}
+
+    def run():
         try:
-            rows += iptv.parse(iptv_fetch(url, 5_000_000, 30)[0].decode("utf-8", "replace"))
-        except Exception as e:  # noqa: BLE001 - one bad list must not stop the other
-            log("iptv list failed:", type(e).__name__)
-    with ThreadPoolExecutor(IPTV_WORKERS) as pool:
-        states = list(pool.map(lambda r: iptv.probe(r["url"], iptv_fetch), rows))
-    rows = [{**r, "state": s} for r, s in zip(rows, states)]
-    playlist = iptv.clean(rows) if iptv.usable(rows) else LATEST["iptv"]["playlist"]
-    LATEST["iptv"] = {"playlist": playlist, "counts": iptv.counts(rows), "checked": now}
+            box["data"] = work()
+        except Exception as e:  # noqa: BLE001 - handed to the caller below
+            box["error"] = e
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(deadline)
+    if t.is_alive():
+        raise TimeoutError(f"slower than {deadline} s")
+    if "error" in box:
+        raise box["error"]
+    return box["data"]
+
+
+def iptv_fetch(url, limit, timeout, keep=None, headers=None):
+    """For iptv.probe: public addresses only. Reads up to `limit` bytes but holds on to the first `keep`."""
+    if not iptv.is_public(url, _resolve):
+        raise ValueError("not a public address")
+
+    def work():
+        start, chunks, size, held = time.monotonic(), [], 0, 0
+        all_headers = {"User-Agent": "VLC/3.0.20 LibVLC/3.0.20", **(headers or {})}
+        req = urllib.request.Request(urllib.parse.quote(url, safe=":/?&=%#+,;@~-_.!*()[]"), headers=all_headers)
+        with IPTV_OPENER.open(req, timeout=min(timeout, 10)) as r:
+            final = r.geturl()
+            while size < limit:
+                if time.monotonic() - start > timeout:
+                    raise TimeoutError(url)
+                chunk = r.read1(65536)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if keep is None or held < keep:
+                    chunks.append(chunk)
+                    held += len(chunk)
+        data = b"".join(chunks)
+        return (data[:keep] if keep else data), time.monotonic() - start, final
+    return _within(timeout, work)
+
+
+def iptv_file(list_id):
+    return os.path.join(IPTV_FILES, list_id + ".m3u")
+
+
+def iptv_read(lst):
+    if lst["kind"] == "file":
+        with open(iptv_file(lst["id"]), encoding="utf-8", errors="replace") as f:
+            return f.read()
+    return iptv_fetch(lst["url"], iptv.FILE_LIMIT, 30)[0].decode("utf-8", "replace")
+
+
+def _iptv_rows(lists):
+    return [r for lst in lists for r in lst["rows"]]
+
+
+def _iptv_head(lists):
+    return next((lst["head"] for lst in lists if lst.get("head")), "")
+
+
+def iptv_save():
+    """Caller holds IPTV_LOCK."""
     tmp = IPTV_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(LATEST["iptv"], f)
+        json.dump({k: v for k, v in LATEST["iptv"].items() if k != "checking"}, f)
     os.replace(tmp, IPTV_PATH)
 
 
+def iptv_run(only=None, now=None):
+    """Checks every list, or just the ids in `only`. Reading and probing happen outside the lock."""
+    now = now or time.time()
+    with IPTV_LOCK:
+        targets = [lst for lst in LATEST["iptv"]["lists"] if only is None or lst["id"] in only]
+        LATEST["iptv"]["checking"] = bool(targets)
+    if not targets:
+        return
+    try:
+        fresh, complete = iptv.check_lists(targets, iptv_read, iptv_fetch, now)
+    except Exception:
+        with IPTV_LOCK:
+            LATEST["iptv"]["checking"] = False
+        raise
+    done = {lst["id"]: lst for lst in fresh}
+    with IPTV_LOCK:
+        cur = LATEST["iptv"]
+        cur["lists"] = [done.get(lst["id"], lst) for lst in cur["lists"]]   # a list deleted meanwhile stays deleted
+        rows = _iptv_rows(cur["lists"])
+        if iptv.usable(rows):
+            cur["playlist"] = iptv.clean(rows, _iptv_head(cur["lists"]))
+        cur["counts"] = iptv.counts(rows)
+        if only is None:
+            cur["checked"] = now if complete else now - IPTV_EVERY + IPTV_RETRY
+        cur["checking"] = False
+        iptv_save()
+
+
+def iptv_loop():
+    """Regular checks, plus the ones asked for from the page."""
+    while True:
+        IPTV_WAKE.wait(300)
+        IPTV_WAKE.clear()
+        with IPTV_LOCK:
+            want = set(IPTV_WANT)
+            IPTV_WANT.clear()
+            due = time.time() - LATEST["iptv"]["checked"] >= IPTV_EVERY
+        try:
+            if due or "all" in want:
+                iptv_run()
+            elif want:
+                iptv_run(want)
+        except Exception as e:  # noqa: BLE001 - keep the worker alive
+            log("iptv check failed:", e)
+
+
+def iptv_ask(what):
+    with IPTV_LOCK:
+        IPTV_WANT.add(what)
+    IPTV_WAKE.set()
+
+
 def load_iptv():
+    """Saved state, or the first lists from IPTV_LISTS. An older file had no lists: it keeps its playlist until a new check."""
     try:
         with open(IPTV_PATH, encoding="utf-8") as f:
-            LATEST["iptv"] = json.load(f)
+            data = json.load(f)
     except (OSError, ValueError):
-        pass
+        data = {}
+    managed = "lists" in data
+    lists = data["lists"] if managed else [iptv.new_list("url", "", u) for u in IPTV_SEED]
+    LATEST["iptv"] = {"lists": lists, "playlist": data.get("playlist", ""), "counts": data.get("counts"),
+                      "checked": data.get("checked", 0) if managed else 0, "checking": False}
+    os.makedirs(IPTV_FILES, exist_ok=True)
+    if lists and not managed:
+        with IPTV_LOCK:
+            iptv_save()
+
+
+def iptv_status():
+    with IPTV_LOCK:
+        cur = LATEST["iptv"]
+        rows = _iptv_rows(cur["lists"])
+        return {"counts": iptv.counts(rows) if rows else cur["counts"], "checked": cur["checked"], "checking": cur["checking"],
+                "lists": [iptv.view(lst) for lst in cur["lists"]]}
+
+
+def iptv_add(lst):
+    """Adds a list and asks for it to be checked; False when there are already too many."""
+    with IPTV_LOCK:
+        if len(LATEST["iptv"]["lists"]) >= IPTV_MAX_LISTS:
+            return False
+        LATEST["iptv"]["lists"].append(lst)
+        iptv_save()
+    iptv_ask(lst["id"])
+    return True
+
+
+def iptv_delete(list_id):
+    with IPTV_LOCK:
+        cur = LATEST["iptv"]
+        left = [lst for lst in cur["lists"] if lst["id"] != list_id]
+        if len(left) == len(cur["lists"]):
+            return False
+        cur["lists"] = left
+        rows = _iptv_rows(left)
+        cur["playlist"] = iptv.clean(rows, _iptv_head(left)) if iptv.counts(rows)["online"] else ""
+        cur["counts"] = iptv.counts(rows)
+        iptv_save()
+    try:
+        os.remove(iptv_file(list_id))
+    except OSError:
+        pass   # a list from an address has no file
+    return True
 
 
 def weather_tick():
@@ -505,7 +645,11 @@ class Handler(SimpleHTTPRequestHandler):
             items = news_db.history(NEWS_DB, opened_only=True, since=time.time() - 30 * 86400)
             return self.json({"items": items, "updated": time.time(), "errors": []})
         if path == "/api/iptv":
-            return self.json({"counts": LATEST["iptv"]["counts"], "checked": LATEST["iptv"]["checked"]})
+            return self.json(iptv_status())
+        if path == "/api/iptv/channels":
+            with IPTV_LOCK:
+                lst = next((x for x in LATEST["iptv"]["lists"] if x["id"] == (q.get("id") or [""])[0]), None)
+                return self.json({"channels": iptv.channels(lst)}) if lst else self.send_error(404)
         if path == "/api/arrivals":
             return self.json(LATEST["arrivals"])
         if path.startswith("/api/prom/"):
@@ -541,6 +685,39 @@ class Handler(SimpleHTTPRequestHandler):
         self.close_connection = True   # the body stays unread
         self.json({"error": "JSON only"}, 415)
         return True
+
+    def iptv_post(self, parts):
+        if parts == ["check"]:
+            iptv_ask("all")
+            return self.json({"ok": True})
+        if len(parts) == 3 and parts[0] == "lists" and parts[2] == "delete":
+            return self.json({"ok": True}) if iptv_delete(urllib.parse.unquote(parts[1])) else self.send_error(404)
+        if parts not in (["lists"], ["upload"]):
+            return self.send_error(404)
+        data = self.read_json(IPTV_BODY_LIMIT)
+        if data is None:
+            return None
+        name = str(data.get("name", ""))
+        if parts == ["lists"]:
+            url = str(data.get("url", "")).strip()
+            if not iptv.valid_address(url):
+                return self.json({"error": "Use an http or https address"}, 400)
+            if any(x.get("url") == url for x in LATEST["iptv"]["lists"]):
+                return self.json({"error": "That list is already here"}, 409)
+            lst = iptv.new_list("url", name, url)
+        else:
+            content = str(data.get("content", ""))
+            if len(content.encode("utf-8", "replace")) > iptv.FILE_LIMIT or not iptv.parse(content):
+                return self.json({"error": "That file has no channels"}, 400)
+            lst = iptv.new_list("file", name, name or "playlist.m3u")
+            os.makedirs(IPTV_FILES, exist_ok=True)
+            with open(iptv_file(lst["id"]), "w", encoding="utf-8") as f:
+                f.write(content)
+        if not iptv_add(lst):
+            if lst["kind"] == "file":
+                os.remove(iptv_file(lst["id"]))
+            return self.json({"error": f"At most {IPTV_MAX_LISTS} lists"}, 400)
+        return self.json({"ok": True, "id": lst["id"]})
 
     def read_json(self, limit):
         """The request's JSON object, or None after answering 413 or 400."""
@@ -769,6 +946,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.change_password()
         if path == "/api/account/logout-everywhere":
             return self.logout_everywhere()
+        if parts[:2] == ["api", "iptv"]:
+            return self.iptv_post(parts[2:])
         if parts[:2] == ["api", "settings"]:
             return self.settings_post([urllib.parse.unquote(x) for x in parts[2:]])
         if len(parts) == 4 and parts[:2] == ["api", "news"] and parts[3] == "open":
@@ -807,8 +986,10 @@ if __name__ == "__main__":
     load_state()
     load_iptv()
     auth.startup_check(log)
-    for fn, every in ((attention_tick, 30), (arrivals_tick, 60), (weather_tick, 1800), (iptv_tick, 300)):
+    for fn, every in ((attention_tick, 30), (arrivals_tick, 60), (weather_tick, 1800)):
         threading.Thread(target=loop, args=(fn, every), daemon=True).start()
     threading.Thread(target=feeds_loop, daemon=True).start()
+    IPTV_WAKE.set()   # first look right after starting
+    threading.Thread(target=iptv_loop, daemon=True).start()
     log("home on port", PORT)
     make_server(PORT).serve_forever()

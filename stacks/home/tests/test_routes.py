@@ -136,13 +136,13 @@ class GuestRoutes(Base):
 
     def test_iptv_playlist_is_public(self):
         self.addCleanup(server.LATEST.__setitem__, "iptv", server.LATEST["iptv"])
-        server.LATEST["iptv"] = {"playlist": "#EXTM3U\n#EXTINF:-1,A\nhttp://a/1\n", "counts": None, "checked": 0}
+        server.LATEST["iptv"] = {**server.LATEST["iptv"], "playlist": "#EXTM3U\n#EXTINF:-1,A\nhttp://a/1\n"}
         status, _, data = self.call("/iptv.m3u")
         self.assertEqual((status, data), (200, b"#EXTM3U\n#EXTINF:-1,A\nhttp://a/1\n"))
 
     def test_iptv_playlist_before_the_first_check(self):
         self.addCleanup(server.LATEST.__setitem__, "iptv", server.LATEST["iptv"])
-        server.LATEST["iptv"] = {"playlist": "", "counts": None, "checked": 0}
+        server.LATEST["iptv"] = {**server.LATEST["iptv"], "playlist": ""}
         self.assertEqual(self.call("/iptv.m3u")[0], 404)
 
     def test_iptv_status_needs_the_login(self):
@@ -183,6 +183,75 @@ class GuestRoutes(Base):
 
 
 class AdminRoutes(Base):
+    IPTV_LIST = "#EXTM3U\n#EXTINF:-1,A\nhttp://a.example/1\n"
+
+    def fresh_iptv(self):
+        self.addCleanup(server.LATEST.__setitem__, "iptv", server.LATEST["iptv"])
+        server.LATEST["iptv"] = {"lists": [], "playlist": "", "counts": None, "checked": 0, "checking": False}
+
+    def iptv_post(self, path, obj=None):
+        return self.call(path, "POST", cookie=self.cookie(), body=json.dumps(obj or {}))
+
+    def iptv_lists(self):
+        return json.loads(self.call("/api/iptv", cookie=self.cookie())[2])["lists"]
+
+    def test_iptv_add_by_address(self):
+        self.fresh_iptv()
+        self.assertEqual(self.iptv_post("/api/iptv/lists", {"url": "https://example.org/a.m3u8", "name": "A"})[0], 200)
+        self.assertEqual([(x["name"], x["kind"]) for x in self.iptv_lists()], [("A", "url")])
+
+    def test_iptv_refuses_a_bad_address(self):
+        self.fresh_iptv()
+        self.assertEqual(self.iptv_post("/api/iptv/lists", {"url": "file:///etc/passwd"})[0], 400)
+
+    def test_iptv_refuses_the_same_address_twice(self):
+        self.fresh_iptv()
+        self.iptv_post("/api/iptv/lists", {"url": "https://example.org/a.m3u8"})
+        self.assertEqual(self.iptv_post("/api/iptv/lists", {"url": "https://example.org/a.m3u8"})[0], 409)
+
+    def test_iptv_upload_a_file(self):
+        self.fresh_iptv()
+        self.assertEqual(self.iptv_post("/api/iptv/upload", {"name": "mine.m3u", "content": self.IPTV_LIST})[0], 200)
+        lst = self.iptv_lists()[0]
+        self.assertEqual((lst["name"], lst["kind"]), ("mine.m3u", "file"))
+        self.assertTrue(os.path.exists(server.iptv_file(lst["id"])))
+
+    def test_iptv_upload_must_be_a_playlist(self):
+        self.fresh_iptv()
+        self.assertEqual(self.iptv_post("/api/iptv/upload", {"name": "x", "content": "<html>"})[0], 400)
+
+    def test_iptv_delete_removes_list_file_and_channels(self):
+        self.fresh_iptv()
+        self.iptv_post("/api/iptv/upload", {"name": "mine.m3u", "content": self.IPTV_LIST})
+        lst = self.iptv_lists()[0]
+        self.assertEqual(self.iptv_post(f"/api/iptv/lists/{lst['id']}/delete")[0], 200)
+        self.assertEqual(self.iptv_lists(), [])
+        self.assertFalse(os.path.exists(server.iptv_file(lst["id"])))
+
+    def test_iptv_delete_unknown_is_404(self):
+        self.fresh_iptv()
+        self.assertEqual(self.iptv_post("/api/iptv/lists/nope/delete")[0], 404)
+
+    def test_iptv_channels_of_a_list(self):
+        self.fresh_iptv()
+        server.LATEST["iptv"]["lists"] = [{"id": "x1", "name": "n", "kind": "url", "url": "http://e", "checked": 1, "error": "",
+                                          "rows": [{"info": "#EXTINF:-1,A", "url": "http://a/1", "opts": [], "state": "lag"}]}]
+        status, _, data = self.call("/api/iptv/channels?id=x1", cookie=self.cookie())
+        self.assertEqual((status, json.loads(data)["channels"][0]["state"]), (200, "lag"))
+        self.assertEqual(self.call("/api/iptv/channels?id=nope", cookie=self.cookie())[0], 404)
+
+    def test_iptv_check_now(self):
+        self.fresh_iptv()
+        self.assertEqual(self.iptv_post("/api/iptv/check")[0], 200)
+
+    def test_iptv_changes_need_the_login(self):
+        for path in ("/api/iptv/lists", "/api/iptv/upload", "/api/iptv/check", "/api/iptv/lists/x/delete"):
+            self.assertEqual(self.call(path, "POST", body="{}")[0], 401, path)
+
+    def test_iptv_page_needs_the_login(self):
+        self.assertEqual(self.call("/admin/iptv.html")[0], 302)
+        self.assertEqual(self.call("/admin/iptv.html", cookie=self.cookie())[0], 200)
+
     def test_landing_goes_to_the_owner_page(self):
         status, headers, _ = self.call("/", cookie=self.cookie())
         self.assertEqual((status, headers["Location"]), (302, "/admin/"))
