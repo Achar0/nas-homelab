@@ -143,6 +143,7 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Netwatch | http://192.168.1.14:8790 (redirects to `https://<nas-name>.<tailnet>.ts.net:8793`) | `netwatch` | Connection map and attacker flags (own code) |
 | Mission Control | http://192.168.1.14:8800 (redirects to `https://<nas-name>.<tailnet>.ts.net:8843`) | `mission-control` | Performance history (1 year) + service stats, one screen, needs the admin login (own code + Prometheus) |
 | Minecraft | `192.168.1.14:25565` | `minecraft_server` | Fabric server, whitelisted; **normally stopped** |
+| iPhone backup | — | `iphone-backup` | Daily encrypted full iPhone backup over Wi-Fi to the owner's home folder, started in the evening with a PIN prompt (usbmuxd + netmuxd + libimobiledevice) |
 | Tailscale | — | `tailscale` | Remote access: node `nas` plus a subnet route for the home LAN |
 | Firefox | http://192.168.1.14:5888 | UGREEN app (`@appstore`) | Browser on the NAS; also used for headless screenshots |
 | UGOS / Theater | https://192.168.1.14:9443 | built in | NAS admin, 影视中心 (media library) |
@@ -150,6 +151,13 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 Containers are named `name-port` (`autobangumi-7892`), except `tailscale` (no port) and the UGOS-managed apps.
 
 Notes per service:
+
+- **iPhone backup**
+  - Same kind of backup as Finder/iTunes (apps, settings, messages, photos), encrypted with `BACKUP_PASSWORD` from `.env`. Without that password the backup can't be restored. `BACKUP_DIR` in `.env` sets the target folder.
+  - **iOS 27 asks for the iPhone PIN before every encrypted backup**, so it can't run silently at night. Between 21:00 and 23:00 the scheduler starts one backup per evening (if the last good one is ≥ 20 h old and the iPhone is on home Wi-Fi) and pushes an ntfy "enter your PIN"; without the PIN the attempt is dropped after 30 min. ntfy also on a failed run and after 72 h without a good backup.
+  - USB goes through the standard `usbmuxd` (run with `-p`: its preflight hung on iOS 27). netmuxd runs in shim mode in front of it and only adds Wi-Fi devices found by mDNS (`_apple-mobdev2._tcp`, host networking). netmuxd's own USB driver wedged after long sessions (`Mux error -8`).
+  - netmuxd sometimes misses the iPhone's announcement (it shares port 5353 with UGOS's avahi); when the iPhone isn't visible the scripts restart only netmuxd, which finds it again within seconds.
+  - One-time setup with the iPhone on the NAS's USB port: `docker exec -it iphone-backup iphone-pair` (pair, turn on Wi-Fi connections, turn on encryption), then a first full backup with `iphone-backup --usb`. `iphone-status` shows the state; `data/status.json` is there for dashboards.
 
 - **AdGuard Home**
   - Port 53 is bound to `192.168.1.14` only. Binding `0.0.0.0:53` clashes with the dnsmasq that UGOS runs for its VMs.
@@ -478,6 +486,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-13**
 
+- **iPhone backup** stack: encrypted daily backup over Wi-Fi (usbmuxd + netmuxd + libimobiledevice). First full backup over USB (93 GB). iOS 27 wants the PIN for every backup, so it runs in the evening with an ntfy PIN prompt.
 - **HTTPS and passkeys** (#6): Caddy serves Home (:3443), Mission Control (:8843) and Netwatch (:8793) on the Tailscale name with a Tailscale certificate. Plain-HTTP ports redirect pages and refuse writes, except the TV, public news and playlist paths. The session cookie is `Secure`; loopback is trusted only without `X-Forwarded-*`; the login throttle uses the real client address. Passkeys (Face ID / Touch ID) added in Settings → Account, with the password as fallback. Home now depends on `cryptography`. AdGuard rewrite added. UGOS firewall rule for the tailnet (`100.64.0.0/10`), which it had silently been dropping.
 
 **2026-11-08**

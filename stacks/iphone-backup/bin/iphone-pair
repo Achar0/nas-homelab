@@ -1,0 +1,30 @@
+#!/bin/bash
+# One-time setup with the iPhone plugged into the NAS by USB:
+#   docker exec -it iphone-backup iphone-pair
+# Pairs, turns on Wi-Fi connections and backup encryption, remembers the UDID.
+set -euo pipefail
+source /usr/local/bin/common.sh
+
+echo "Waiting for an iPhone on USB (unlock it)..."
+until UDID=$(idevice_id -l 2>/dev/null | head -1) && [ -n "$UDID" ]; do sleep 2; done
+echo "Found $(idevicename -u "$UDID" 2>/dev/null || echo device) ($UDID)"
+
+echo "Pairing: tap 'Trust' on the iPhone and enter your passcode."
+until idevicepair -u "$UDID" pair 2>&1 | tee /dev/stderr | grep -q SUCCESS; do sleep 3; done
+idevicepair -u "$UDID" validate
+echo "$UDID" > "$UDID_FILE"
+
+echo "Turning on Wi-Fi connections (lets the NAS find the iPhone without a cable)..."
+pymobiledevice3 lockdown wifi-connections on --udid "$UDID"
+
+if [ "$(ideviceinfo -u "$UDID" -q com.apple.mobile.backup -k WillEncrypt 2>/dev/null)" = "true" ]; then
+    echo "Backup encryption is already on (BACKUP_PASSWORD must match its password)."
+else
+    [ -n "${BACKUP_PASSWORD:-}" ] || { echo "Set BACKUP_PASSWORD in .env first"; exit 1; }
+    echo "Turning on backup encryption (the iPhone may ask for its passcode)..."
+    idevicebackup2 -u "$UDID" encryption on "$BACKUP_PASSWORD" "$BACKUP_ROOT"
+fi
+
+echo
+echo "Done. Run the first (full) backup now while on USB, it is much faster:"
+echo "  docker exec -it iphone-backup iphone-backup --usb"
