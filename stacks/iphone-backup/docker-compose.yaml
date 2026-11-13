@@ -11,8 +11,9 @@ services:
       TZ: Europe/Rome
       PUID: 1000              # backup files belong to this NAS user
       PGID: 10
-      WINDOW_START: 1         # nightly window (hours), phone usually charging
-      WINDOW_END: 6
+      WINDOW_START: 21        # evening window (hours): iOS asks for the PIN each time
+      WINDOW_END: 23
+      PIN_TIMEOUT_MIN: 30     # give up if the PIN is not entered
       MIN_HOURS: 20
     volumes:
       - ${BACKUP_DIR:?set BACKUP_DIR in .env}:/backup   # personal folder on the NAS

@@ -33,3 +33,10 @@ write_status() {  # write_status <result> <message>
         "$1" "$2" "$(date +%s)" "$last_ok" \
         "$(du -sh "$BACKUP_ROOT/$(udid)" 2>/dev/null | cut -f1)" > "$STATUS_FILE"
 }
+
+# netmuxd sometimes misses the iPhone's announcement; a restart makes it ask again
+wifi_visible() {
+    visible -n && return 0
+    pkill -x netmuxd; sleep 15
+    visible -n
+}

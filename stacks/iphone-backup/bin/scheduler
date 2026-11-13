@@ -1,36 +1,40 @@
 #!/bin/bash
-# Every 15 min: if the last good backup is old enough and we are in the night
-# window (or it's very overdue), back up as soon as the iPhone shows up on Wi-Fi.
+# Every 15 min in the evening window: if a backup is due and the iPhone is on
+# home Wi-Fi, start it. iOS 27 asks for the PIN on the phone before every
+# encrypted backup, so iphone-backup pushes a "enter your PIN" notification.
+# At most one attempt per evening; nothing happens at night.
 set -uo pipefail
 source /usr/local/bin/common.sh
 
-WINDOW_START=${WINDOW_START:-1}    # hour, inclusive  (phone charging at night)
-WINDOW_END=${WINDOW_END:-6}        # hour, exclusive
+WINDOW_START=${WINDOW_START:-21}   # hour, inclusive  (after dinner)
+WINDOW_END=${WINDOW_END:-23}       # hour, exclusive  (before sleep)
 MIN_HOURS=${MIN_HOURS:-20}         # don't back up more often than this
-OVERDUE_HOURS=${OVERDUE_HOURS:-48} # past this, try at any hour
-ALERT_HOURS=${ALERT_HOURS:-72}     # past this, send one ntfy alert per day
+ALERT_HOURS=${ALERT_HOURS:-72}     # past this, one ntfy alert per evening
 
 while true; do
     sleep 900
     [ -n "$(udid)" ] || continue                     # not paired yet
+    HOUR=$((10#$(date +%H)))
+    [ "$HOUR" -ge "$WINDOW_START" ] && [ "$HOUR" -lt "$WINDOW_END" ] || continue
+    # a backup is running right now (e.g. a manual one): nothing to do
+    flock -n "$STATE/backup.lock" true || continue
+
     # never backed up yet → count from the pairing time, not from 1970
     LAST=$(cat "$STATE/last_success" 2>/dev/null || stat -c %Y "$UDID_FILE")
     AGE_H=$(( ($(date +%s) - LAST) / 3600 ))
-    # a backup is running right now (e.g. the first one over USB): nothing to do
-    flock -n "$STATE/backup.lock" true || continue
-    HOUR=$((10#$(date +%H)))
+    TODAY=$(date +%F)
 
-    if [ "$AGE_H" -ge "$ALERT_HOURS" ] && [ "$(cat "$STATE/alerted" 2>/dev/null)" != "$(date +%F)" ]; then
-        date +%F > "$STATE/alerted"
-        notify "iPhone not backed up" "Last good backup ${AGE_H} h ago. Is the iPhone on home Wi-Fi?" high
+    if [ "$AGE_H" -ge "$ALERT_HOURS" ] && [ "$(cat "$STATE/alerted" 2>/dev/null)" != "$TODAY" ]; then
+        echo "$TODAY" > "$STATE/alerted"
+        notify "iPhone not backed up" "Last good backup ${AGE_H} h ago." high
     fi
 
     [ "$AGE_H" -ge "$MIN_HOURS" ] || continue
-    if [ "$HOUR" -ge "$WINDOW_START" ] && [ "$HOUR" -lt "$WINDOW_END" ] || [ "$AGE_H" -ge "$OVERDUE_HOURS" ]; then
-        if visible -n; then
-            iphone-backup || true
-        else
-            write_status waiting "iPhone not seen on Wi-Fi"
-        fi
+    [ "$(cat "$STATE/attempted" 2>/dev/null)" != "$TODAY" ] || continue   # one try per evening
+    if wifi_visible; then
+        echo "$TODAY" > "$STATE/attempted"
+        iphone-backup || true
+    else
+        write_status waiting "iPhone not seen on Wi-Fi"
     fi
 done

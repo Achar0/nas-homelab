@@ -13,13 +13,20 @@ usbmuxd -f -v -p -l /data/usbmuxd.log &   # listens on /var/run/usbmuxd
 USBMUXD_PID=$!
 for _ in $(seq 50); do [ -S /var/run/usbmuxd ] && break; sleep 0.2; done
 
-RUST_LOG=${NETMUXD_LOG:-warn} netmuxd --plist-storage /data/lockdown \
-    --upstream-usbmuxd /var/run/usbmuxd --socket-path /var/run/netmuxd &
+# netmuxd runs in a respawn loop: the scheduler restarts it ("pkill netmuxd")
+# when it has missed the iPhone's mDNS announcement, so it asks again.
+(
+    while true; do
+        RUST_LOG=${NETMUXD_LOG:-warn} netmuxd --plist-storage /data/lockdown \
+            --upstream-usbmuxd /var/run/usbmuxd --socket-path /var/run/netmuxd &
+        for _ in $(seq 50); do [ -S /var/run/netmuxd ] && break; sleep 0.2; done
+        chmod 666 /var/run/netmuxd     # the unprivileged backup user needs it
+        wait $! || true             # killed on purpose: just start it again
+        sleep 1
+    done
+) &
 NETMUXD_PID=$!
-for _ in $(seq 50); do [ -S /var/run/netmuxd ] && break; sleep 0.2; done
-
-# let the unprivileged backup user use both sockets
-chmod 666 /var/run/usbmuxd /var/run/netmuxd
+chmod 666 /var/run/usbmuxd
 
 trap 'kill $USBMUXD_PID $NETMUXD_PID 2>/dev/null; exit 0' TERM INT
 scheduler &
