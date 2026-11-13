@@ -30,6 +30,7 @@ MAX_CHALLENGES = 100
 MAX_PASSKEYS = 20
 MAX_NAME = 40
 MAX_DEPTH = 8
+MAX_CLIENT_DATA = 4096   # real clientDataJSON is a few hundred bytes
 MIN_RSA_BITS = 2048
 TIMEOUT_MS = CHALLENGE_S * 1000
 USER_ID = b"admin"
@@ -188,9 +189,11 @@ def _check_client_data(client_data_json, kind, challenge_ok):
         raise PasskeyError("passkeys need NAS_TS_NAME")
     if not isinstance(client_data_json, bytes):
         raise PasskeyError("client data is not bytes")
+    if len(client_data_json) > MAX_CLIENT_DATA:
+        raise PasskeyError("client data too long")
     try:
         data = json.loads(client_data_json)
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError, RecursionError) as e:   # deep nesting -> RecursionError
         raise PasskeyError("client data is not JSON") from e
     if not isinstance(data, dict):
         raise PasskeyError("client data is not an object")

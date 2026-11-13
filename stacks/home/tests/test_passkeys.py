@@ -7,6 +7,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
@@ -210,9 +211,11 @@ class Register(TsName):
 
     def test_garbage_is_a_passkey_error(self):
         cdj, att = self.auth.register(self.challenge)
-        for bad_cdj, bad_att in ((b"not json", att), (b"[]", att), (cdj, b"\x00"), (cdj, cbor({"fmt": "none"})),
-                                 (cdj, cbor({"fmt": "none", "attStmt": {}, "authData": b"short"}))):
-            with self.subTest(bad_cdj=bad_cdj, bad_att=bad_att[:8]), self.assertRaises(passkeys.PasskeyError):
+        for i, (bad_cdj, bad_att) in enumerate(((b"not json", att), (b"[]", att), (cdj, b"\x00"), (cdj, cbor({"fmt": "none"})),
+                                 (cdj, cbor({"fmt": "none", "attStmt": {}, "authData": b"short"})),
+                                 (b"[" * 100000 + b"]" * 100000, att), (b"[" * 2000 + b"]" * 2000, att),
+                                 (b'{"type": "webauthn.create", "pad": "' + b"x" * 5000 + b'"}', att))):
+            with self.subTest(i), self.assertRaises(passkeys.PasskeyError):
                 passkeys.verify_registration(bad_cdj, bad_att, self.ok)
 
     def test_needs_ts_name(self):
@@ -267,6 +270,30 @@ class Login(TsName):
         _, cdj, ad, sig = self.auth.login(self.challenge)
         with self.assertRaises(passkeys.PasskeyError):
             passkeys.verify_login("other", cdj, ad, sig, self.stored, self.ok)
+
+    def test_deeply_nested_client_data_is_a_passkey_error(self):
+        cred, _, ad, sig = self.auth.login(self.challenge)
+        for cdj in (b"[" * 100000 + b"]" * 100000, b"[" * 2000 + b"]" * 2000):
+            with self.subTest(len(cdj)), self.assertRaises(passkeys.PasskeyError):
+                passkeys.verify_login(cred, cdj, ad, sig, self.stored, self.ok)
+        # Past the length cap too: the parser's RecursionError must still become a PasskeyError
+        with mock.patch.object(passkeys, "MAX_CLIENT_DATA", 10 ** 6), self.assertRaises(passkeys.PasskeyError):
+            passkeys.verify_login(cred, b"[" * 100000 + b"]" * 100000, ad, sig, self.stored, self.ok)
+
+    def test_client_data_over_4096_bytes_is_refused(self):
+        cred, cdj, ad, _ = self.auth.login(self.challenge)
+        data = json.loads(cdj)
+        for size, ok in ((4096, True), (4097, False)):
+            data["pad"] = ""
+            data["pad"] = "x" * (size - len(json.dumps(data).encode()))
+            big = json.dumps(data).encode()
+            self.assertEqual(len(big), size)
+            sig = self.auth.sign(ad + hashlib.sha256(big).digest())   # validly signed, only too long
+            if ok:
+                self.assertEqual(passkeys.verify_login(cred, big, ad, sig, self.stored, self.ok), 0)
+            else:
+                with self.assertRaises(passkeys.PasskeyError):
+                    passkeys.verify_login(cred, big, ad, sig, self.stored, self.ok)
 
     def test_garbage_signature_is_a_passkey_error(self):
         cred, cdj, ad, _ = self.auth.login(self.challenge)
