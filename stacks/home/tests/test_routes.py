@@ -198,6 +198,20 @@ class PasskeyRoutes(Base):
         self.assertIn("nas_admin=", headers["Set-Cookie"])
         self.assertIn("; Secure", headers["Set-Cookie"])
 
+    def test_register_says_what_the_user_can_fix(self):
+        for name in ("", "x" * 41, "bad\x07name"):
+            status, _, data = self.register(name)
+            self.assertEqual((status, data), (400, {"error": "Use a name of 1 to 40 characters."}), repr(name))
+        self.assertEqual(self.register()[0], 200)
+        status, _, data = self.register()   # same authenticator again
+        self.assertEqual((status, data), (400, {"error": "This passkey is already added."}))
+
+    def test_register_refuses_a_21st_passkey(self):
+        for i in range(passkeys.MAX_PASSKEYS):
+            server.PASSKEYS.add({"id": f"id{i}", "public_key": "", "sign_count": 0}, f"Key {i}", 1.0)
+        status, _, data = self.register()
+        self.assertEqual((status, data), (400, {"error": "You already have 20 passkeys. Remove one first."}))
+
     def test_register_needs_login(self):
         self.assertEqual(self.proxied("/api/passkeys/options")[0], 401)
         self.assertEqual(self.proxied("/api/passkeys", body={})[0], 401)

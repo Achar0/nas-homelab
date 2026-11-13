@@ -44,6 +44,10 @@
 .g-error { color: var(--bad); font-size: 0.875rem; min-height: 1.2em; }
 .g-login-actions { display: flex; gap: 0.6rem; }
 .g-login-actions button { flex: 1; min-height: 2.75rem; border-radius: 10px; font-weight: 600; }
+.g-passkey { background: var(--accent); color: #fff; min-height: 2.75rem; border-radius: 10px; font-weight: 600; }
+.g-passkey:disabled { opacity: 0.5; }
+.g-or { display: flex; align-items: center; gap: 0.75rem; color: var(--text-2); font-size: 0.8125rem; }
+.g-or::before, .g-or::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--text) 12%, transparent); }
 .g-cancel { background: var(--tile); }
 .g-submit { background: var(--accent); color: #fff; }
 .g-submit:disabled { opacity: 0.5; }

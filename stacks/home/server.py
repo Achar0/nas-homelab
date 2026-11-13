@@ -909,11 +909,16 @@ class Handler(SimpleHTTPRequestHandler):
         name = body.get("name")
         if fields is None or not isinstance(name, str):
             return self.json({"error": "bad request"}, 400)
-        if not 1 <= len(name.strip()) <= passkeys.MAX_NAME:
-            return self.json({"error": f"Give the passkey a name of 1 to {passkeys.MAX_NAME} characters."}, 400)
+        name = name.strip()
+        if not 1 <= len(name) <= passkeys.MAX_NAME or any(ord(c) < 32 or ord(c) == 127 for c in name):
+            return self.json({"error": f"Use a name of 1 to {passkeys.MAX_NAME} characters."}, 400)
+        if len(PASSKEYS.all()) >= passkeys.MAX_PASSKEYS:
+            return self.json({"error": f"You already have {passkeys.MAX_PASSKEYS} passkeys. Remove one first."}, 400)
         now = time.time()
         try:
             entry = passkeys.verify_registration(*fields, lambda c: CHALLENGES.take("register", c, now))
+            if PASSKEYS.get(entry["id"]):   # only known once the attestation is parsed
+                return self.json({"error": "This passkey is already added."}, 400)
             PASSKEYS.add(entry, name, now)
         except passkeys.PasskeyError as e:
             log("passkey refused:", e)   # the reason stays in the log

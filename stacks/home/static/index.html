@@ -52,7 +52,9 @@
   <dialog class="g-login" id="login" aria-labelledby="l-title">
     <form id="l-form">
       <b id="l-title">Admin</b>
-      <input id="l-pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required>
+      <button type="button" class="g-passkey" id="l-passkey" hidden>Sign in with passkey</button>
+      <div class="g-or" id="l-or" hidden><span>or</span></div>
+      <input id="l-pw" type="password" placeholder="Password" autocomplete="current-password webauthn" aria-label="Password" required>
       <label><input id="l-remember" type="checkbox" checked>Remember this device for 30 days</label>
       <p class="g-error" id="l-error" role="alert"></p>
       <div class="g-login-actions">
