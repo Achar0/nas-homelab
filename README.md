@@ -97,7 +97,7 @@ flowchart LR
     Devices -- "HTTP: TV page, playlist" --> Homepage
     Devices -- HTTPS --> Caddy
     subgraph NAS[NAS 192.168.1.14]
-      Caddy[Caddy :3443 / :8843 / :8793]
+      Caddy[Caddy :3443 / :8843 / :8793 / :9943]
       Caddy --> Homepage & MC & NW
       AdGuard[AdGuard Home :53 / :8080]
       Homepage[Home :3001]
@@ -131,7 +131,7 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Service | URL | Stack folder | Purpose |
 |---|---|---|---|
 | AdGuard Home | http://192.168.1.14:8080 | `adguard` | Network-wide ad and tracker blocking (DNS) |
-| Caddy | `https://<nas-name>.<tailnet>.ts.net` on :3443 (Home), :8843 (Mission Control), :8793 (Netwatch) | `caddy` | HTTPS in front of the admin pages, with a certificate from Tailscale |
+| Caddy | `https://<nas-name>.<tailnet>.ts.net` on :3443 (Home), :8843 (Mission Control), :8793 (Netwatch), :9943 (UGOS) | `caddy` | HTTPS in front of the admin pages and UGOS, with a certificate from Tailscale |
 | Home | `https://<nas-name>.<tailnet>.ts.net:3443` (guest and admin pages; :3001 redirects there, only the TV page, public news and `/iptv.m3u` stay on http://192.168.1.14:3001) | `home` | Public summary for family and guests, the TV idle page at `/tv` and the clean IPTV playlist at `/iptv.m3u`; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, IPTV lists, dock) needs the admin login (own code, passkeys or password) |
 | Homepage (retired) | — | `homepage` | Old gethomepage dashboard; only its docker proxy (`dockerproxy-2375`) still runs |
 | qBittorrent | http://192.168.1.14:8888 | UGREEN app (`@appstore`) | Downloads and seeding |
@@ -146,7 +146,7 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | iPhone backup | — | `iphone-backup` | Daily encrypted full iPhone backup over Wi-Fi to the owner's home folder, started in the evening with a PIN prompt (usbmuxd + netmuxd + libimobiledevice) |
 | Tailscale | — | `tailscale` | Remote access: node `nas` plus a subnet route for the home LAN |
 | Firefox | http://192.168.1.14:5888 | UGREEN app (`@appstore`) | Browser on the NAS; also used for headless screenshots |
-| UGOS / Theater | https://192.168.1.14:9443 | built in | NAS admin, 影视中心 (media library) |
+| UGOS / Theater | `https://<nas-name>.<tailnet>.ts.net:9943` (fallback: https://192.168.1.14:9443, self-signed) | built in | NAS admin, 影视中心 (media library) |
 
 Containers are named `name-port` (`autobangumi-7892`), except `tailscale` (no port) and the UGOS-managed apps.
 
@@ -192,7 +192,8 @@ Notes per service:
   - IP forwarding is already on, because Docker enables it.
   - The old Homepage also accepted its Tailscale address and MagicDNS name (`HOMEPAGE_ALLOWED_HOSTS`, in its `.env`).
 - **Caddy**
-  - Official `caddy` image, host network, stack [`stacks/caddy`](stacks/caddy/). It terminates HTTPS on 3443 (Home), 8843 (Mission Control) and 8793 (Netwatch) and proxies to the apps on `127.0.0.1`.
+  - Official `caddy` image, host network, stack [`stacks/caddy`](stacks/caddy/). It terminates HTTPS on 3443 (Home), 8843 (Mission Control), 8793 (Netwatch) and 9943 (UGOS) and proxies to the apps on `127.0.0.1`.
+  - UGOS (:9943) is proxied to its own HTTPS port `127.0.0.1:9443` with `tls_insecure_skip_verify`: UGREEN's certificate is self-signed, and the hop never leaves loopback. The browser sees only the valid Tailscale certificate. The direct ports 9999/9443 stay open (LAN and tailnet only, via the UGOS firewall) as the fallback if Caddy is down.
   - The certificate for `<nas-name>.<tailnet>.ts.net` comes from Tailscale's CA through `tailscaled`'s local socket (the folder `tailscale/run/` is mounted at `/var/run/tailscale`). Caddy renews it by itself; its state is in `data/` and `config/` (not in git).
   - The name is set in `.env` (`NAS_TS_NAME`, see `.env.example`) and also in the Home, Mission Control and Netwatch `.env`, which switches their plain-HTTP ports to redirect/refuse mode.
   - `auto_https disable_redirects`: the apps do the HTTP redirects themselves, because some plain-HTTP paths must keep working.
@@ -486,6 +487,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-13**
 
+- **UGOS over HTTPS** (#23): Caddy serves the UGOS web UI on the Tailscale name at :9943 with a valid certificate, so there is no self-signed warning to click through. Direct :9443 kept as fallback.
 - **iPhone backup** stack: encrypted daily backup over Wi-Fi (usbmuxd + netmuxd + libimobiledevice). First full backup over USB (93 GB). iOS 27 wants the PIN for every backup, so it runs in the evening with an ntfy PIN prompt.
 - **HTTPS and passkeys** (#6): Caddy serves Home (:3443), Mission Control (:8843) and Netwatch (:8793) on the Tailscale name with a Tailscale certificate. Plain-HTTP ports redirect pages and refuse writes, except the TV, public news and playlist paths. The session cookie is `Secure`; loopback is trusted only without `X-Forwarded-*`; the login throttle uses the real client address. Passkeys (Face ID / Touch ID) added in Settings → Account, with the password as fallback. Home now depends on `cryptography`. AdGuard rewrite added. UGOS firewall rule for the tailnet (`100.64.0.0/10`), which it had silently been dropping.
 
