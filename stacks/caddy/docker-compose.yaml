@@ -1,0 +1,15 @@
+# HTTPS for the admin pages on the Tailscale name. Certificates come from
+# Tailscale's own CA through tailscaled's local socket.
+services:
+  caddy:
+    image: caddy:2.11.7
+    container_name: caddy
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    volumes:
+      # The folder, not the socket file, so it survives tailscaled restarts
+      - ../tailscale/run:/var/run/tailscale
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data:/data
+      - ./config:/config

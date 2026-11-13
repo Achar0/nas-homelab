@@ -7,7 +7,10 @@ const params = new URLSearchParams(location.search);
 if (params.has("static")) document.documentElement.classList.add("static");   // headless screenshots
 const DEMO = ["urgent", "many"].includes(params.get("demo")) ? `?demo=${params.get("demo")}` : "";
 const host = location.hostname;
-const at = (port, scheme = "http") => `${scheme}://${host}:${port}`;
+// On HTTPS pages, our own apps are linked on their HTTPS port (Home 3443, Mission Control 8843, Netwatch 8793)
+const HTTPS_PORTS = { 3001: 3443, 8800: 8843, 8790: 8793 };
+const at = (port, scheme = "http") =>
+  location.protocol === "https:" && HTTPS_PORTS[port] ? `https://${host}:${HTTPS_PORTS[port]}` : `${scheme}://${host}:${port}`;
 
 const APPS = {
   netwatch: { name: "Netwatch", href: at(8790) },

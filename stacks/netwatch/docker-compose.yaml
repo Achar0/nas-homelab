@@ -9,6 +9,8 @@ services:
       - .env                 # NTFY_URL (private ntfy topic for phone alerts, not in git)
     environment:
       PORT: 8790
+      NAS_TS_NAME: ${NAS_TS_NAME:-}
+      HTTPS_PORT: "8793"
       HOME_URL: http://127.0.0.1:3001
       HOME_LAT: "45.46"      # map "home" point (Milan)
       HOME_LON: "9.19"

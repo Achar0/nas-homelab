@@ -18,3 +18,5 @@ admin-auth.env
 !docs/screenshots/*.png
 admin-auth/
 auth.json
+stacks/caddy/data/
+stacks/caddy/config/
