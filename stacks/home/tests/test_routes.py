@@ -53,9 +53,9 @@ class Base(unittest.TestCase):
     def setUp(self):
         server.THROTTLE.reset(HOST)
 
-    def call(self, path, method="GET", cookie=None, body=None):
+    def call(self, path, method="GET", cookie=None, body=None, headers=None):
         c = http.client.HTTPConnection(HOST, self.port, timeout=10)
-        headers = {"Cookie": cookie} if cookie else {}
+        headers = {**({"Cookie": cookie} if cookie else {}), **(headers or {})}
         if body is not None:
             headers["Content-Type"] = "application/json"
         c.request(method, path, body=body, headers=headers)
@@ -69,6 +69,58 @@ class Base(unittest.TestCase):
 
     def login(self, pw=PW, remember=True, next_url=None):
         return self.call("/api/login", "POST", body=json.dumps({"pw": pw, "remember": remember, "next": next_url}))
+
+
+class HttpsGate(Base):
+    """NAS_TS_NAME set: plain HTTP from the network is redirected or refused."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        os.environ["NAS_TS_NAME"] = "nas.example.ts.net"
+
+    @classmethod
+    def tearDownClass(cls):
+        os.environ.pop("NAS_TS_NAME", None)
+        super().tearDownClass()
+
+    def network(self):
+        """The test client is on loopback: pretend it comes from the network."""
+        real = auth.LOOPBACK
+        auth.LOOPBACK = set()
+        self.addCleanup(setattr, auth, "LOOPBACK", real)
+
+    def test_pages_redirect_to_https(self):
+        self.network()
+        status, headers, _ = self.call("/admin/settings?tab=account")
+        self.assertEqual((status, headers["Location"]), (301, "https://nas.example.ts.net:3443/admin/settings?tab=account"))
+
+    def test_login_over_http_is_refused(self):
+        self.network()
+        self.assertEqual(self.call("/api/login", "POST", body=json.dumps({"pw": PW}))[0], 403)
+
+    def test_tv_and_playlist_stay_on_http(self):
+        self.network()
+        for path in ("/tv", "/tv/tv.js", "/tv?demo=urgent", "/api/public/tv", "/api/news?topic=all", "/iptv.m3u"):
+            self.assertNotIn(self.call(path)[0], (301, 403), path)
+
+    def test_opened_news_is_not_an_exception(self):
+        self.network()
+        self.assertEqual(self.call("/api/news?topic=opened")[0], 403)
+
+    def test_spoofed_proxy_header_from_the_network_is_still_redirected(self):
+        self.network()
+        self.assertEqual(self.call("/admin/", headers={"X-Forwarded-Proto": "https"})[0], 301)
+
+    def test_internal_layout_refuses_requests_through_caddy(self):   # real loopback
+        via = {"X-Forwarded-Proto": "https", "X-Forwarded-For": "192.168.1.20"}
+        self.assertEqual(self.call("/api/internal/layout", headers=via)[0], 401)
+        self.assertEqual(self.call("/api/internal/layout")[0], 200)
+
+    def test_without_a_name_nothing_changes(self):
+        self.network()
+        os.environ["NAS_TS_NAME"] = ""
+        self.assertEqual(self.call("/admin/")[0], 302)
 
 
 class GuestRoutes(Base):

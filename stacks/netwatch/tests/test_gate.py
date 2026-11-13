@@ -36,15 +36,15 @@ class Gate(unittest.TestCase):
         cls.httpd.server_close()
 
     def setUp(self):
-        self.real = app.LOOPBACK
-        app.LOOPBACK = set()   # the test client is on loopback: pretend it comes from the network
+        self.real = auth.LOOPBACK
+        auth.LOOPBACK = set()   # the test client is on loopback: pretend it comes from the network
 
     def tearDown(self):
-        app.LOOPBACK = self.real
+        auth.LOOPBACK = self.real
 
-    def call(self, path, method="GET", cookie=None):
+    def call(self, path, method="GET", cookie=None, headers=None):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
-        c.request(method, path, headers={"Cookie": cookie} if cookie else {})
+        c.request(method, path, headers={**({"Cookie": cookie} if cookie else {}), **(headers or {})})
         r = c.getresponse()
         body = r.read()
         c.close()
@@ -72,8 +72,22 @@ class Gate(unittest.TestCase):
         self.assertEqual(self.call("/", cookie=self.cookie())[0], 200)
 
     def test_the_machine_itself_skips_the_login(self):
-        app.LOOPBACK = self.real
+        auth.LOOPBACK = self.real
         self.assertEqual(self.call("/api/state")[0], 200)
+
+    def test_a_proxied_loopback_request_needs_the_login(self):
+        auth.LOOPBACK = self.real   # real loopback, but through the reverse proxy
+        via = {"X-Forwarded-Proto": "https", "X-Forwarded-For": "192.168.1.20"}
+        self.assertEqual(self.call("/api/state", headers=via)[0], 401)
+        self.assertEqual(self.call("/", headers=via)[0], 302)
+        self.assertEqual(self.call("/api/state", cookie=self.cookie(), headers=via)[0], 200)
+
+    def test_plain_http_from_the_network_is_redirected_in_https_mode(self):
+        os.environ["NAS_TS_NAME"] = "nas.example.ts.net"
+        self.addCleanup(os.environ.pop, "NAS_TS_NAME", None)
+        status, headers, _ = self.call("/?x=1")
+        self.assertEqual((status, headers["Location"]), (301, "https://nas.example.ts.net:8793/?x=1"))
+        self.assertEqual(self.call("/api/state")[0], 403)
 
     def test_expired_session_refuses(self):
         old = f"nas_admin={auth.make_token(KEY, time.time() - 1)}"

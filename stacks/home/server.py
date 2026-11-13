@@ -56,7 +56,15 @@ LOGIN_BODY_LIMIT = 4096
 SETTINGS_BODY_LIMIT = 65536
 IPTV_BODY_LIMIT = 6_000_000      # a playlist file, as JSON text
 FEED_NAME_LIMIT = 80
-LOOPBACK = {"127.0.0.1", "::1"}   # Mission Control and Netwatch on this machine; no reverse proxy runs in front
+HTTPS_PORT = int(os.environ.get("HTTPS_PORT", "3443"))
+
+
+def http_exempt(path):
+    """Plain-HTTP exceptions (TV and playlist clients can't do our HTTPS); path includes the query."""
+    p, _, qs = path.partition("?")
+    if p in ("/tv", "/api/public/tv", "/iptv.m3u") or p.startswith("/tv/"):
+        return True
+    return p == "/api/news" and "opened" not in urllib.parse.parse_qs(qs).get("topic", [])
 SHOW_LISTS = {"rail_nas": lambda s: s["rail"]["nas"], "rail_services": lambda s: s["rail"]["services"], "cards": lambda s: s["cards"]}
 FEEDS_WAKE = threading.Event()   # set to refresh the news now instead of at the next 15-minute cycle
 THROTTLE = auth.Throttle()
@@ -614,11 +622,15 @@ class Handler(SimpleHTTPRequestHandler):
         return resolved == ADMIN_STATIC or resolved.startswith(ADMIN_STATIC + os.sep)
 
     def do_HEAD(self):
+        if auth.plain_http_gate(self, HTTPS_PORT, http_exempt):
+            return
         if self.is_admin_file() and not auth.require_login(self):
             return
         super().do_HEAD()
 
     def do_GET(self):
+        if auth.plain_http_gate(self, HTTPS_PORT, http_exempt):
+            return
         path, _, qs = self.path.partition("?")
         q = urllib.parse.parse_qs(qs)
         if path == "/":
@@ -651,7 +663,7 @@ class Handler(SimpleHTTPRequestHandler):
             data = {"items": items, "updated": LATEST["news_updated"]}
             return self.json({**data, "errors": LATEST["news_errors"]} if self.logged_in() else data)
         if path == "/api/internal/layout":
-            if self.client_address[0] in LOOPBACK:
+            if auth.internal(self):   # another service here, not a client behind the proxy
                 return self.json(layout_view())
             return self.json({"error": "login required"}, 401)
         if path.startswith("/api/"):
@@ -965,6 +977,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self.save(switch, wake=True)
 
     def do_POST(self):
+        if auth.plain_http_gate(self, HTTPS_PORT, http_exempt):
+            return
         path = self.path.split("?")[0]
         if self.from_another_site():
             self.close_connection = True   # the body stays unread

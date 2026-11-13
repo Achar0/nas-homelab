@@ -329,6 +329,30 @@ class Https(unittest.TestCase):
         self.assertFalse(auth.internal(fake("127.0.0.1", {"X-Forwarded-Proto": "https"})))
         self.assertFalse(auth.internal(fake("192.168.1.20", {})))
 
+    def test_loopback_with_http_forwarded_proto_is_neither_proxy_nor_internal(self):
+        h = fake("127.0.0.1", {"X-Forwarded-Proto": "http"}, path="/admin/")
+        self.assertFalse(auth.via_proxy(h))
+        self.assertFalse(auth.internal(h))
+        self.assertTrue(auth.plain_http_gate(h, 3443))
+        self.assertEqual(h.code, 301)
+
+    def test_ipv6_loopback_is_internal(self):
+        self.assertTrue(auth.internal(fake("::1", {})))
+        self.assertTrue(auth.via_proxy(fake("::1", {"X-Forwarded-Proto": "https"})))
+
+    def test_gate_head_redirects_and_post_to_a_page_is_refused(self):
+        h = fake("192.168.1.20", {}, path="/admin/", command="HEAD")
+        self.assertTrue(auth.plain_http_gate(h, 3443))
+        self.assertEqual(h.code, 301)
+        h = fake("192.168.1.20", {}, path="/admin/", command="POST")
+        self.assertTrue(auth.plain_http_gate(h, 3443))
+        self.assertEqual(h.code, 403)
+
+    def test_require_login_on_api_still_answers_401_in_https_mode(self):
+        h = fake("192.168.1.20", {"Host": f"{TS}:3443"}, path="/api/settings", port=3443)
+        self.assertFalse(auth.require_login(h))
+        self.assertEqual(h.code, 401)
+
     def test_gate_redirects_pages_keeping_the_query(self):
         h = fake("192.168.1.20", {}, path="/admin/?x=1")
         self.assertTrue(auth.plain_http_gate(h, 3443))

@@ -15,6 +15,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import auth
 
 PORT = int(os.environ.get("PORT", "8800"))
+HTTPS_PORT = int(os.environ.get("HTTPS_PORT", "8843"))
 PROM = os.environ.get("PROM_URL", "http://127.0.0.1:9090")
 NETWATCH = os.environ.get("NETWATCH_URL", "http://127.0.0.1:8790")
 HOME = os.environ.get("HOME_URL", "http://127.0.0.1:3001")
@@ -75,10 +76,14 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_bytes(502, ('{"error": "%s"}' % type(e).__name__).encode(), "application/json")
 
     def do_HEAD(self):
+        if auth.plain_http_gate(self, HTTPS_PORT):
+            return
         if auth.require_login(self):
             super().do_HEAD()
 
     def do_GET(self):
+        if auth.plain_http_gate(self, HTTPS_PORT):
+            return None
         if not auth.require_login(self):   # every path: page, vendor files and data
             return None
         path, _, qs = self.path.partition("?")

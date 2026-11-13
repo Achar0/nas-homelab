@@ -467,9 +467,9 @@ class Layout(ServicesBase):
         self.assertIn("dock", data)
 
     def test_internal_layout_refuses_non_loopback(self):
-        real = server.LOOPBACK
-        server.LOOPBACK = set()
-        self.addCleanup(setattr, server, "LOOPBACK", real)
+        real = auth.LOOPBACK
+        auth.LOOPBACK = set()
+        self.addCleanup(setattr, auth, "LOOPBACK", real)
         self.assertEqual(self.req("GET", "/api/internal/layout", login=False)[0], 401)
         self.assertEqual(self.req("GET", "/api/internal/layout", login=True)[0], 401)
 
