@@ -23,8 +23,8 @@ const TABS = { dock: "Dock", rail: "Home rail", cards: "Mission Control cards" }
 let S = null;                 // the settings, as last read from the server
 let section = SECTIONS[location.hash.slice(1)] ? location.hash.slice(1) : "feeds";
 let tab = "dock";
-let passkeyList = null;       // null while loading; [] when none, or when this address can't use passkeys
-let passkeyOk = false;        // secure context with WebAuthn
+let passkeyList = [];
+let passkeyState = "loading"; // loading | ok | insecure (not the HTTPS name) | error
 let armed = null;             // the destructive button waiting for its second click
 
 // ---------- talking to the server ----------
@@ -56,12 +56,11 @@ function toast(text, bad = false) {
 
 // The passkey list; off the HTTPS name the server answers 404 and the section shows the secure-address line
 async function loadPasskeys() {
-  passkeyOk = await passkeysAvailable();
   passkeyList = [];
-  if (!passkeyOk) return;
+  if (!(await passkeysAvailable())) { passkeyState = "insecure"; return; }
   const r = await fetch("/api/passkeys").catch(() => null);
-  if (r?.ok) passkeyList = (await r.json()).passkeys;
-  else passkeyOk = false;
+  if (r?.ok) { passkeyList = (await r.json()).passkeys; passkeyState = "ok"; }
+  else passkeyState = r?.status === 404 ? "insecure" : "error";   // 404 = not the HTTPS name
 }
 
 // Save, then redraw from what the server really has, so a refused change goes back by itself
@@ -78,7 +77,7 @@ const toggle = (on, label, attrs, disabled = false) =>
   `<button class="tog" role="switch" aria-checked="${on}" aria-label="${esc(label)}" ${attrs}${disabled ? " disabled" : ""}></button>`;
 
 function confirmButton(key, label, confirm) {
-  return `<button class="danger" data-act="arm" data-key="${esc(key)}">${esc(armed === key ? confirm : label)}</button>`;
+  return `<button type="button" class="danger" data-act="arm" data-key="${esc(key)}">${esc(armed === key ? confirm : label)}</button>`;
 }
 
 const moveButtons = (list, id, i, n) => `<span class="move">
@@ -210,8 +209,10 @@ function secureAddress() {
 
 function drawPasskeys() {
   const head = `<h3>Passkeys</h3>`;
-  if (!passkeyOk) return `${head}<div class="group"><div class="row"><div class="grow"><small>Passkeys work on the secure address: open ${esc(secureAddress())}</small></div></div></div>`;
-  const rows = (passkeyList || []).map((p) => `<div class="row">
+  if (passkeyState === "loading") return "";
+  if (passkeyState === "error") return `${head}<div class="group"><div class="row"><div class="grow"><small>Couldn't load passkeys.</small></div></div></div>`;
+  if (passkeyState === "insecure") return `${head}<div class="group"><div class="row"><div class="grow"><small>Passkeys work on the secure address: open ${esc(secureAddress())}</small></div></div></div>`;
+  const rows = passkeyList.map((p) => `<div class="row">
     <div class="grow">${esc(p.name)}<small>Added ${day(p.created)} · Last used ${p.last_used ? day(p.last_used) : "never"}</small></div>
     ${confirmButton(`pk-${p.id}`, "Remove", "Really remove?")}</div>`).join("");
   return `${head}<form class="group" id="add-passkey">${rows}
