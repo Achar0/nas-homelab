@@ -62,7 +62,16 @@ async function startConditional() {
     const options = await passkeyOptions();
     const cred = await navigator.credentials.get({ publicKey: toGetOptions(options), mediation: "conditional", signal: mine.signal });
     await finishPasskeyLogin(cred);
-  } catch { /* aborted, cancelled or unsupported: the password form still works */ }
+  } catch (e) {
+    // Aborted, cancelled or unsupported: the password form still works.
+    // A refused sign-in says so and asks again (a fresh challenge) while the dialog is open.
+    if (e?.rejected && conditional === mine && login.open) {
+      $("l-error").textContent = "That passkey didn't work. Use your password.";
+      conditional = null;
+      startConditional();
+      return;
+    }
+  }
   if (conditional === mine) conditional = null;
 }
 
@@ -88,7 +97,7 @@ async function finishPasskeyLogin(cred) {
     }),
   });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || "login");
+  if (!r.ok) throw Object.assign(new Error(d.error || "login"), { rejected: true });
   location.href = d.next;
 }
 
@@ -119,6 +128,7 @@ function openLogin() {
 
 passkeysAvailable().then((ok) => {
   $("l-passkey").hidden = $("l-or").hidden = !ok;
+  if (ok && login.open && !conditional) startConditional();   // ?login=1 opened the dialog first
 });
 $("admin").addEventListener("click", openLogin);
 $("l-cancel").addEventListener("click", () => login.close());

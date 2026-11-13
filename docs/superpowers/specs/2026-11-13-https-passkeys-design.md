@@ -166,11 +166,17 @@ the home network) or turning Tailscale on.
 
 ### Rollout order (keeps everything reachable at each step)
 
+The old code trusted every loopback request, so putting Caddy in front of it would expose Netwatch
+without a login. The new code therefore goes first, with HTTPS mode still off.
+
 1. User enables HTTPS certificates in the Tailscale console.
-2. Deploy Caddy and check `https://<name>:3443` from a Tailscale device.
-3. Add the AdGuard rewrite and check from the LAN without Tailscale.
-4. Deploy the `auth.py` / server changes with `NAS_TS_NAME` set (redirects on), then passkeys.
-5. User adds passkeys on iPhone and Mac and tests sign-in from home and away.
+2. Deploy the new Home / Mission Control / Netwatch code with `NAS_TS_NAME` empty (loopback narrowing
+   already active, behaviour otherwise unchanged).
+3. Deploy Caddy. Check `https://<name>:8793` gives a 302 to the login and `/api/internal/layout` on
+   :3443 gives 401.
+4. Add the AdGuard rewrite and check from the LAN without Tailscale.
+5. Set `NAS_TS_NAME` in the three `.env` files and recreate (redirects on), then passkeys.
+6. User adds passkeys on iPhone and Mac and tests sign-in from home and away.
 
 ### Tests
 

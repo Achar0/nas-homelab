@@ -203,6 +203,8 @@ def log_out_everywhere():
 
 def startup_check(log):
     """Say at start-up why every login would be refused; never the values themselves."""
+    if not ts_name():
+        log("HTTPS mode is off: NAS_TS_NAME is not set, serving plain HTTP")
     if configured():
         return True
     log(f"admin login is off: {auth_file()} is missing or invalid, everything locked stays locked")

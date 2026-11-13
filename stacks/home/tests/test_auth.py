@@ -54,7 +54,7 @@ class Tokens(unittest.TestCase):
 
 class Session(unittest.TestCase):
     def setUp(self):
-        self.saved = {k: os.environ.pop(k, None) for k in ("SESSION_SECRET", "ADMIN_PASSWORD_HASH", "ADMIN_AUTH_FILE")}
+        self.saved = {k: os.environ.pop(k, None) for k in ("SESSION_SECRET", "ADMIN_PASSWORD_HASH", "ADMIN_AUTH_FILE", "NAS_TS_NAME")}
         os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
         self.clear()
 
@@ -177,14 +177,24 @@ class Session(unittest.TestCase):
 
     def test_startup_check_says_why_without_the_values(self):
         lines = []
+        os.environ["NAS_TS_NAME"] = TS
         self.write("nonsense", "short-value")
         self.assertFalse(auth.startup_check(lines.append))
         self.assertEqual(len(lines), 1)
         self.assertIn(AUTH_FILE, lines[0])
         self.assertNotIn("short-value", lines[0])
 
+    def test_startup_check_warns_when_https_mode_is_off(self):
+        self.set_up_env()
+        lines = []
+        self.assertTrue(auth.startup_check(lines.append))
+        self.assertEqual(len(lines), 1)
+        self.assertIn("NAS_TS_NAME is not set", lines[0])
+        self.assertIn("plain HTTP", lines[0])
+
     def test_startup_check_is_quiet_when_all_is_well(self):
         self.set_up_env()
+        os.environ["NAS_TS_NAME"] = TS
         lines = []
         self.assertTrue(auth.startup_check(lines.append))
         self.assertEqual(lines, [])

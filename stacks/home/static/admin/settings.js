@@ -3,7 +3,10 @@ import { esc, moveItem } from "/lib.js";
 import { bufToB64url, toCreateOptions, passkeysAvailable } from "/passkey.js";
 
 const $ = (id) => document.getElementById(id);
-const at = (port, scheme = "http") => `${scheme}://${location.hostname}:${port}`;
+// On HTTPS pages, our own apps are linked on their HTTPS port (Home 3443, Mission Control 8843, Netwatch 8793)
+const HTTPS_PORTS = { 3001: 3443, 8800: 8843, 8790: 8793 };
+const at = (port, scheme = "http") =>
+  location.protocol === "https:" && HTTPS_PORTS[port] ? `https://${location.hostname}:${HTTPS_PORTS[port]}` : `${scheme}://${location.hostname}:${port}`;
 const pane = $("pane");
 
 const SECTIONS = { feeds: "News feeds", alerts: "Alert rules", services: "Services & dock", apps: "Apps", account: "Account" };
