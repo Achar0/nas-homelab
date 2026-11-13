@@ -14,6 +14,8 @@ os.environ["DATA_DIR"] = tempfile.mkdtemp()
 os.environ["NTFY_URL"] = ""
 import auth  # noqa: E402
 import server  # noqa: E402
+import passkeys  # noqa: E402
+from tests.test_passkeys import Authenticator  # noqa: E402
 
 KEY = "k" * 64
 HOST = "127.0.0.1"
@@ -117,10 +119,149 @@ class HttpsGate(Base):
         self.assertEqual(self.call("/api/internal/layout", headers=via)[0], 401)
         self.assertEqual(self.call("/api/internal/layout")[0], 200)
 
+    def test_http_exceptions_are_get_only_and_have_no_dot_dot(self):
+        self.network()
+        self.assertEqual(self.call("/tv", "POST", body="{}")[0], 403)
+        self.assertEqual(self.call("/tv/../admin/")[0], 301)
+        self.assertEqual(self.call("/tv/%2E%2e/admin/")[0], 301)
+
     def test_without_a_name_nothing_changes(self):
         self.network()
         os.environ["NAS_TS_NAME"] = ""
         self.assertEqual(self.call("/admin/")[0], 302)
+
+
+TS = "nas.example.ts.net"
+CADDY = {"X-Forwarded-Proto": "https", "Host": f"{TS}:3443"}
+
+
+class PasskeyRoutes(Base):
+    """The passkey API, called the way Caddy does (from 127.0.0.1 with X-Forwarded-*)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        os.environ["NAS_TS_NAME"] = TS
+
+    @classmethod
+    def tearDownClass(cls):
+        os.environ.pop("NAS_TS_NAME", None)
+        super().tearDownClass()
+
+    def setUp(self):
+        super().setUp()
+        self.saved = server.PASSKEYS, server.CHALLENGES
+        server.PASSKEYS = passkeys.Store(os.path.join(tempfile.mkdtemp(), "passkeys.json"))
+        server.CHALLENGES = passkeys.Challenges()
+        self.addCleanup(lambda: setattr(server, "PASSKEYS", self.saved[0]))
+        self.addCleanup(lambda: setattr(server, "CHALLENGES", self.saved[1]))
+        self.key = Authenticator(TS, f"https://{TS}:3443")
+
+    def proxied(self, path, method="POST", body=None, cookie=None, ip="203.0.113.7"):
+        body = {} if body is None and method == "POST" else body
+        return self.call(path, method, cookie=cookie, headers={**CADDY, "X-Forwarded-For": ip},
+                         body=None if body is None else json.dumps(body))
+
+    def answer(self, path, method="POST", **kw):
+        status, headers, data = self.proxied(path, method, **kw)
+        return status, headers, json.loads(data)
+
+    def register(self, name="Laptop"):
+        _, _, opts = self.answer("/api/passkeys/options", cookie=self.cookie())
+        cdj, att = self.key.register(opts["publicKey"]["challenge"])
+        return self.answer("/api/passkeys", cookie=self.cookie(), body={
+            "name": name, "clientDataJSON": passkeys.b64url(cdj), "attestationObject": passkeys.b64url(att)})
+
+    def login_body(self, challenge=None, spoil=None, **extra):
+        if challenge is None:
+            challenge = self.answer("/api/passkey/login/options")[2]["publicKey"]["challenge"]
+        cred_id, cdj, ad, sig = self.key.login(challenge, spoil=spoil)
+        return {"id": cred_id, "clientDataJSON": passkeys.b64url(cdj), "authenticatorData": passkeys.b64url(ad),
+                "signature": passkeys.b64url(sig), **extra}
+
+    def test_endpoints_are_404_without_a_name_or_not_through_caddy(self):
+        self.assertEqual(self.call("/api/passkey/login/options", "POST", body="{}")[0], 404)   # not through Caddy
+        self.assertEqual(self.call("/api/passkeys", cookie=self.cookie())[0], 404)
+        os.environ["NAS_TS_NAME"] = ""
+        self.addCleanup(os.environ.__setitem__, "NAS_TS_NAME", TS)
+        for method, path in (("POST", "/api/passkey/login/options"), ("POST", "/api/passkey/login"),
+                             ("GET", "/api/passkeys"), ("POST", "/api/passkeys/options"),
+                             ("POST", "/api/passkeys"), ("POST", "/api/passkeys/x/remove")):
+            self.assertEqual(self.proxied(path, method, cookie=self.cookie())[0], 404, path)
+
+    def test_register_then_sign_in_sets_the_cookie(self):
+        status, _, data = self.register()
+        self.assertEqual((status, data), (200, {"ok": True}))
+        body = self.login_body(remember=True)
+        status, headers, data = self.answer("/api/passkey/login", body=body)
+        self.assertEqual((status, data), (200, {"ok": True, "next": "/admin/"}))
+        self.assertIn("nas_admin=", headers["Set-Cookie"])
+        self.assertIn("; Secure", headers["Set-Cookie"])
+
+    def test_register_needs_login(self):
+        self.assertEqual(self.proxied("/api/passkeys/options")[0], 401)
+        self.assertEqual(self.proxied("/api/passkeys", body={})[0], 401)
+        self.assertEqual(self.proxied("/api/passkeys", "GET")[0], 401)
+        self.assertEqual(self.proxied("/api/passkeys/x/remove")[0], 401)
+
+    def test_wrong_signature_counts_against_the_throttle(self):
+        self.register()
+        for _ in range(5):
+            status, _, data = self.answer("/api/passkey/login", body=self.login_body(spoil="bad_signature"))
+            self.assertEqual((status, data), (401, {"error": "wrong"}))
+        status, _, data = self.answer("/api/passkey/login", body=self.login_body())
+        self.assertEqual((status, data["error"]), (429, "wait"))
+
+    def test_malformed_fields_are_401_on_login_and_400_on_register(self):
+        for body in ({"id": 5}, {"id": "x", "clientDataJSON": "!!", "authenticatorData": "", "signature": ""}):
+            status, _, data = self.answer("/api/passkey/login", body=body)
+            self.assertEqual((status, data), (401, {"error": "wrong"}))
+        status, _, data = self.answer("/api/passkeys", cookie=self.cookie(), body={"name": "x", "clientDataJSON": "!!!", "attestationObject": ""})
+        self.assertEqual((status, data), (400, {"error": "bad request"}))
+
+    def test_throttle_is_per_forwarded_client(self):
+        for _ in range(5):
+            self.assertEqual(self.proxied("/api/login", body={"pw": "nope"}, ip="198.51.100.1")[0], 401)
+        self.assertEqual(self.proxied("/api/login", body={"pw": "nope"}, ip="198.51.100.1")[0], 429)
+        self.assertEqual(self.proxied("/api/login", body={"pw": "nope"}, ip="198.51.100.2")[0], 401)
+        # a client-supplied first entry doesn't help: the last one (Caddy's) counts
+        spoofed = self.call("/api/login", "POST", body=json.dumps({"pw": "nope"}),
+                            headers={**CADDY, "X-Forwarded-For": "1.2.3.4, 198.51.100.1"})
+        self.assertEqual(spoofed[0], 429)
+
+    def test_list_and_remove(self):
+        self.register("Laptop")
+        status, _, data = self.answer("/api/passkeys", "GET", cookie=self.cookie())
+        self.assertEqual(status, 200)
+        [item] = data["passkeys"]
+        self.assertEqual((item["id"], item["name"], item["last_used"]), (self.key.cred_id, "Laptop", None))
+        self.assertEqual(set(item), {"id", "name", "created", "last_used"})
+        self.assertEqual(self.proxied(f"/api/passkeys/{item['id']}/remove", cookie=self.cookie())[0], 200)
+        self.assertEqual(self.proxied(f"/api/passkeys/{item['id']}/remove", cookie=self.cookie())[0], 404)
+        self.assertEqual(self.answer("/api/passkeys", "GET", cookie=self.cookie())[2], {"passkeys": []})
+
+    def test_challenge_from_registration_cannot_sign_in(self):
+        _, _, opts = self.answer("/api/passkeys/options", cookie=self.cookie())
+        cdj, att = self.key.register(opts["publicKey"]["challenge"])
+        self.answer("/api/passkeys", cookie=self.cookie(), body={
+            "name": "A", "clientDataJSON": passkeys.b64url(cdj), "attestationObject": passkeys.b64url(att)})
+        _, _, opts = self.answer("/api/passkeys/options", cookie=self.cookie())
+        status, _, _ = self.answer("/api/passkey/login", body=self.login_body(challenge=opts["publicKey"]["challenge"]))
+        self.assertEqual(status, 401)
+
+    def test_next_is_filtered_by_safe_next(self):
+        self.register()
+        body = self.login_body(next="https://evil.example/")
+        self.assertEqual(self.answer("/api/passkey/login", body=body)[2]["next"], "/admin/")
+
+    def test_form_posts_and_other_sites_are_refused(self):
+        c = http.client.HTTPConnection(HOST, self.port, timeout=10)
+        c.request("POST", "/api/passkey/login/options", body="{}", headers={**CADDY, "Content-Type": "text/plain"})
+        self.assertEqual(c.getresponse().status, 415)
+        c.close()
+        other = self.call("/api/passkey/login/options", "POST", body="{}",
+                          headers={**CADDY, "Origin": "https://nas.example.ts.net:8843"})
+        self.assertEqual(other[0], 403)
 
 
 class GuestRoutes(Base):
