@@ -282,6 +282,10 @@ def arrivals_tick():
 IPTV_SEED = [u for u in E("IPTV_LISTS", "").split(",") if u]   # only used once, to fill the managed lists
 IPTV_PATH = os.path.join(DATA, "iptv.json")
 IPTV_FILES = os.path.join(DATA, "iptv-files")
+IPTV_CATALOG_PATH = os.path.join(DATA, "iptv-catalog.json")
+IPTV_CATALOG = "https://iptv-org.github.io/api/"       # language and category of every channel
+IPTV_CATALOG_LIMIT = 40_000_000
+IPTV_KNOWN = {}                  # the last catalog that could be read; empty means nothing can be judged yet
 IPTV_EVERY = 6 * 3600
 IPTV_RETRY = 1800                # after a list couldn't be read: sooner than the next regular check
 IPTV_MAX_LISTS = 20
@@ -380,6 +384,26 @@ def iptv_save():
     os.replace(tmp, IPTV_PATH)
 
 
+def iptv_refresh_catalog():
+    """Keeps the last good catalog when iptv-org can't be reached."""
+    global IPTV_KNOWN
+    try:
+        feeds, channels = (json.loads(iptv_fetch(IPTV_CATALOG + name, IPTV_CATALOG_LIMIT, 120)[0]) for name in ("feeds.json", "channels.json"))
+        known = iptv.catalog(feeds, channels)
+        tmp = IPTV_CATALOG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(known, f)
+        os.replace(tmp, IPTV_CATALOG_PATH)
+        IPTV_KNOWN = known
+    except Exception as e:  # noqa: BLE001 - a missing catalog must not stop the check
+        log("iptv catalog not updated:", e)
+
+
+def _iptv_allowed(rows):
+    """Without a catalog nothing is allowed: an unfiltered playlist must never be published."""
+    return iptv.curate(rows, IPTV_KNOWN) if IPTV_KNOWN else []
+
+
 def iptv_run(only=None, now=None):
     """Checks every list, or just the ids in `only`. Reading and probing happen outside the lock."""
     now = now or time.time()
@@ -389,6 +413,7 @@ def iptv_run(only=None, now=None):
     if not targets:
         return
     try:
+        iptv_refresh_catalog()
         fresh, complete = iptv.check_lists(targets, iptv_read, iptv_fetch, now)
     except Exception:
         with IPTV_LOCK:
@@ -399,8 +424,9 @@ def iptv_run(only=None, now=None):
         cur = LATEST["iptv"]
         cur["lists"] = [done.get(lst["id"], lst) for lst in cur["lists"]]   # a list deleted meanwhile stays deleted
         rows = _iptv_rows(cur["lists"])
-        if iptv.usable(rows):
-            cur["playlist"] = iptv.clean(rows, _iptv_head(cur["lists"]))
+        allowed = _iptv_allowed(rows)
+        if iptv.usable(allowed):
+            cur["playlist"] = iptv.clean(allowed, _iptv_head(cur["lists"]))
         cur["counts"] = iptv.counts(rows)
         if only is None:
             cur["checked"] = now if complete else now - IPTV_EVERY + IPTV_RETRY
@@ -440,9 +466,16 @@ def load_iptv():
     except (OSError, ValueError):
         data = {}
     managed = "lists" in data
+    global IPTV_KNOWN
+    try:
+        with open(IPTV_CATALOG_PATH, encoding="utf-8") as f:
+            IPTV_KNOWN = json.load(f)
+    except (OSError, ValueError):
+        IPTV_KNOWN = {}
+    filtered = iptv.CHINESE in data.get("playlist", "")     # a playlist from before the filter is rebuilt right away
     lists = data["lists"] if managed else [iptv.new_list("url", "", u) for u in IPTV_SEED]
     LATEST["iptv"] = {"lists": lists, "playlist": data.get("playlist", ""), "counts": data.get("counts"),
-                      "checked": data.get("checked", 0) if managed else 0, "checking": False}
+                      "checked": data.get("checked", 0) if managed and filtered else 0, "checking": False}
     os.makedirs(IPTV_FILES, exist_ok=True)
     if lists and not managed:
         with IPTV_LOCK:
@@ -476,7 +509,8 @@ def iptv_delete(list_id):
             return False
         cur["lists"] = left
         rows = _iptv_rows(left)
-        cur["playlist"] = iptv.clean(rows, _iptv_head(left)) if iptv.counts(rows)["online"] else ""
+        allowed = _iptv_allowed(rows)
+        cur["playlist"] = iptv.clean(allowed, _iptv_head(left)) if iptv.counts(allowed)["online"] else ""
         cur["counts"] = iptv.counts(rows)
         iptv_save()
     try:

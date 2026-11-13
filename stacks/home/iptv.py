@@ -154,6 +154,78 @@ def clean(rows, head=""):
     return "\n".join(lines) + "\n"
 
 
+# ---------- which channels are kept, and under which menu section ----------
+
+CHINESE, ENGLISH, ITALIAN, MOTORSPORT, FINANCE = SECTIONS = ("Lingua cinese", "Lingua inglese", "Lingua italiana", "Motorsport", "Finanza")
+_LANGUAGES = {"zho": CHINESE, "cmn": CHINESE, "yue": CHINESE, "eng": ENGLISH, "ita": ITALIAN}
+_BLOCKED = {"religious", "kids", "music", "xxx"}    # iptv-org categories, also found in group-title
+_BLOCKED_NAME = re.compile(
+    r"church|gospel|christ|jesus|islam|quran|bible|catholic|allah|faith|prayer|ministr|\bgod\b|\btbn\b|\bewtn\b|\bdaystar\b"
+    r"|padre pio|telepace|tv2000|telemaria|radio maria|佛|基督|教会|法轮"     # religion the catalog doesn't label
+    r"|\bkids?\b|cartoon|boomerang|disney|nick|boing|rai yoyo|rai gulp|frisbee|\bk2\b|rainbow ruby|yu-gi-oh|toonami|icarly|family zone|gametoon|少儿|卡通|动漫|动画|儿童|cctv-?\s*14\b"
+    r"|his glory|swamiji|\bkcm\b|the walk tv|impact network|sophia tv|tele chiara|\bcbn\b|scientology|supreme master|\btct\b|praise tv"
+    r"|world harvest|dove channel|\btln\b"
+    r"|\bradio\b|\bfm\b|\bmtv\b|\bvh1\b|stingray|\brtl 102|deejay tv|\brds\b|live music|\brevolt\b|brit asia|wu tang|stereo 5|\bfuse\b|音乐|cctv-?\s*15\b"
+    r"|press tv|\brt india\b|rtr-planeta|tv brics|\bntd\b|girlfriends films"     # state propaganda, adult studio
+    r"|newsmax|\boan\b|one america|america'?s voice|blaze live|free speech tv|young turks|salem news|right now tv|the first tv"
+    r"|fox news|\bms now\b|talktv|telesur|\bvoa tv\b|\bdkn\b"     # partisan news
+    r"|espa[nñ]ol|telemundo|univision|crimenes|\bcine (aventura|romantico)\b|mas adrenalina|investiga us|wedo tv amor|en francais", re.I)     # foreign feeds the catalog files under English
+_OFFICIAL_CHINESE = re.compile(
+    r"^(cctv|cgtn|cetv)|卫视|satellite|凤凰|phoenix|^(hunan|anhui|guangdong) tv|^zhejiang international|^(golden )?jade|tvb|viutv|rthk|hoy"
+    r"|^(ctv|cts|ftv|pts|ebc|tvbs|set|tti|ttv)\b|hakka tv|channel 8 \(singapore|三立|东森|民视|公视|华视|中视|中天", re.I)
+_MOTORSPORT = re.compile(r"motorsport|motorvision|\bf1\b|formula 1|nascar|floracing|rally tv|\bracer\b|aci sport|\bmotogp\b|\bwrc\b|\bindycar\b", re.I)
+_FINANCE = re.compile(r"bloomberg|cnbc|yahoo!? finance|fox business|financ|财经|class cnbc", re.I)
+
+
+def catalog(feeds, channels):
+    """{tvg-id: {"languages", "categories"}} from the iptv-org data, leaving out adult channels and foreign feeds."""
+    info = {c["id"]: c for c in channels}
+    out = {}
+    for f in feeds:
+        c = info.get(f["channel"])
+        if c and not c.get("is_nsfw") and f["languages"] and set(f["languages"]) <= set(_LANGUAGES):
+            out[f'{f["channel"]}@{f["id"]}'] = {"languages": f["languages"], "categories": c.get("categories") or []}
+    return out
+
+
+def _attribute(info, name):
+    found = re.search(rf'{name}="([^"]*)"', info)
+    return found[1] if found else ""
+
+
+def section(row, known):
+    """The menu section this channel belongs to, or None when it's dropped."""
+    info = row["info"]
+    name = info.rsplit(",", 1)[-1].strip()
+    tvg_id, group = _attribute(info, "tvg-id"), _attribute(info, "group-title")
+    if _BLOCKED_NAME.search(name) or _BLOCKED & set(group.lower().split(";")):
+        return None
+    if not tvg_id:         # the Chinese lists have no ids: only recognised broadcasters get through
+        return CHINESE if _OFFICIAL_CHINESE.search(name) and group not in ("卡通频道",) else None
+    entry = known.get(tvg_id)
+    if not entry or _BLOCKED & set(entry["categories"]):
+        return None
+    languages = {_LANGUAGES[x] for x in entry["languages"]}
+    if CHINESE in languages and _OFFICIAL_CHINESE.search(name):
+        return CHINESE
+    if _MOTORSPORT.search(name):
+        return MOTORSPORT
+    if _FINANCE.search(name) or "business" in entry["categories"] or "business" in group.lower().split(";"):
+        return FINANCE
+    return ENGLISH if ENGLISH in languages else ITALIAN if ITALIAN in languages else None
+
+
+def _grouped(info, title):
+    bare = re.sub(r'\s+group-title="[^"]*"', "", info)
+    return re.sub(r"^(#EXTINF:[^ ,]*)", rf'\1 group-title="{title}"', bare, count=1)
+
+
+def curate(rows, known):
+    """The allowed channels, each moved to its menu section, in menu order (players list groups as they first appear)."""
+    picked = [(section(r, known), r) for r in rows]
+    return [{**r, "info": _grouped(r["info"], s)} for name in SECTIONS for s, r in picked if s == name]
+
+
 # ---------- the lists ----------
 
 def valid_address(url):
