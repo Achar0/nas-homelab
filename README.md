@@ -3,7 +3,8 @@
 Technical documentation and configuration for the home NAS (UGREEN DXP4800, UGOS Pro).
 Every Docker stack running on the NAS is mirrored here, with secrets removed, so changes can be reviewed, versioned and rolled back.
 
-- **Home** (guest summary): http://192.168.1.14:3001 — the owner's page is at `/admin/`, behind the admin login, over HTTPS at `https://<nas-name>.<tailnet>.ts.net:3443`
+- **Home** (guest summary): http://192.168.1.14:3001
+- **Home admin** (the owner's page, behind the admin login): `https://<nas-name>.<tailnet>.ts.net:3443/admin/`
 - **Mission Control** (performance history): `https://<nas-name>.<tailnet>.ts.net:8843` — needs the admin login
 - **Last full review:** 2026-11-06
 
@@ -351,7 +352,7 @@ A one-screen page for "what happened?": every chart opens on the last 24 h and g
 | `mc-node-exporter-9100` | CPU, memory, load, temperatures (hwmon), disk I/O, network, md RAID | 127.0.0.1:9100 |
 | `mc-smartctl-exporter-9633` | SMART for `sda`, `sdb`, `nvme0` (see Security) | 127.0.0.1:9633 |
 | `mc-collector-9101` | Own Python (stdlib only): per-container CPU/RAM via the read-only docker proxy, qBittorrent, AdGuard, Speedtest Tracker, Tailscale (local API socket). A failing source only sets `mc_up{source=…} 0` | 127.0.0.1:9101 |
-| `mc-web-8800` | Own Python: serves the page and vendored JS (uPlot, globe.gl, topojson), proxies only Prometheus `query`/`query_range` and Netwatch `/api/state` | **0.0.0.0:8800** |
+| `mc-web-8800` | Own Python: serves the page and vendored JS (uPlot, globe.gl, topojson), proxies only Prometheus `query`/`query_range` and Netwatch `/api/state` | **0.0.0.0:8800** (redirects to HTTPS :8843 when `NAS_TS_NAME` is set) |
 
 - Collector logins are in `mission-control/.env` (keys in `.env.example`).
 - Tailscale's socket is shared through `tailscale/run/` (mounted at `/var/run/tailscale`).
@@ -423,7 +424,7 @@ The admin pages are served over HTTPS by Caddy ([§3](#3-services)) on the NAS's
 
 **Passkeys:**
 
-- **Add:** open `https://<nas-name>.<tailnet>.ts.net:3443/admin/settings` on the device (iPhone, Mac…), Account → Add a passkey, and confirm with Face ID / Touch ID. Each device needs its own.
+- **Add:** open `https://<nas-name>.<tailnet>.ts.net:3443/admin/settings` on the device (iPhone, Mac…), Account → type a name (e.g. iPhone) → **Add passkey**, and confirm with Face ID / Touch ID. Each device needs its own.
 - **Remove:** same place, remove it from the list. A lost device: remove its passkey, or use *log out everywhere*.
 - **Sign in:** *Sign in with passkey* on the login dialog. If a passkey fails, the password still works.
 - **Lost everything:** delete `admin-auth/passkeys.json` on the NAS; the password login is unaffected.
@@ -444,7 +445,7 @@ Root-only tasks:
 | Docker socket | Dockge has full access (root-equivalent). Home and Mission Control only get the read-only proxy (also on `127.0.0.1:2375`, NAS-local). |
 | Home | The guest page and its APIs need no login (LAN + tailnet only). With HTTPS on, the plain-HTTP port 3001 serves only GET/HEAD for `/tv`, `/api/public/tv`, `/api/news` (public view) and `/iptv.m3u`; everything else redirects or is refused. Feed text is reduced to plain text and escaped before display. |
 | Raw disk access | `mc-smartctl-exporter-9633` gets exactly `/dev/sda`, `/dev/sdb`, `/dev/nvme0` with `SYS_RAWIO`/`SYS_ADMIN` to read SMART (approved 2026-11-06). Not privileged. |
-| Mission Control | Prometheus, exporters and collector listen on `127.0.0.1` only; the page (:8800) exposes read-only queries, never Prometheus' admin API. Every path needs the admin login. |
+| Mission Control | Prometheus, exporters and collector listen on `127.0.0.1` only; the page (served on :8843 over HTTPS; plain :8800 redirects) exposes read-only queries, never Prometheus' admin API. Every path needs the admin login. |
 | Admin login | Home's `/admin/` and APIs, Mission Control and Netwatch refuse without the session cookie (HttpOnly, SameSite=Strict). Netwatch skips the check for requests from `127.0.0.1`, because Home and Mission Control read it over loopback. Admin pages are served over HTTPS (Caddy, certificate from Tailscale) and the session cookie is `Secure`. Plain HTTP on the old ports redirects or refuses, so the password no longer travels in clear. Passkeys (Face ID / Touch ID) sign in without typing the password; the password stays as fallback. Loopback is trusted only for internal calls without `X-Forwarded-*` headers. |
 | Glances | Its own password (`glances/data/glances.pwd`, a hash, not in git). `/api/4/status` (version only), `/docs` and `/openapi.json` (generic API description) stay open; they hold no system data, and everything else answers 401. |
 | Secrets | `.env` files and app data are never committed. See `.gitignore` and the `.env.example` files. |
