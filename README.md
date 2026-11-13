@@ -402,6 +402,7 @@ Copying files to the NAS:
 
 - `scp`/`sftp` cannot write under `/volume1`. Use `ssh <user>@192.168.1.14 'cat > /path/file' < localfile`, or for folders `tar -C dir -cf - . | ssh … 'tar -C /dest -xf -'`.
 - [`scripts/sync-from-nas.sh`](scripts/sync-from-nas.sh) pulls the current configs back into this repo. Run it before committing.
+- [`scripts/nas-check.sh`](scripts/nas-check.sh) `start` | `status`: monthly integrity check, run from the laptop (`NAS=user@host`, SSH on, sudo password). `start` runs a btrfs scrub (every block against its checksum) and then the RAID check (both disks compared, unread sectors exercised), detached from SSH. `status` shows progress; good is scrub `no errors found` and RAID `mismatches 0`. UGOS's own scheduler refuses the pool ("no eligible storage pools", probably because of the SSD cache), so this replaces it. First run 2026-11-13: 897 GiB in 58 min, no errors.
 
 Recreate the Speedtest token (read by Mission Control's collector):
 
@@ -469,7 +470,7 @@ Root-only tasks:
 | Secrets | `.env` files and app data are never committed. See `.gitignore` and the `.env.example` files. |
 | Runs as root | The UGREEN qBittorrent app uses `PUID=0`/`PGID=0`. |
 | Monitoring | Uptime Kuma (service up/down → ntfy), Netwatch (attacker or unexpected-inbound flags → ntfy), Mission Control (history, SMART health). |
-| Backup | **None off-site.** RAID 1 protects against one failed disk only, not against deletion, ransomware or theft. |
+| Backup | **None off-site** (paid cloud dropped, #7). RAID 1 covers one failed disk; UGOS btrfs snapshots (read-only, admin-only to delete) cover deletion and ransomware coming through a share; `scripts/nas-check.sh` monthly for silent corruption. Theft, fire or an attacker with UGOS admin are not covered. The SSD cache is `writethrough`, so losing the NVMe loses no data. |
 
 ## 11. Known issues and next steps
 
@@ -487,6 +488,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-13**
 
+- **Integrity check** (#7): `scripts/nas-check.sh` for a monthly btrfs scrub + RAID check from the laptop (UGOS's scheduler can't do it on this pool). Backup row in the security table updated.
 - **UGOS over HTTPS** (#23): Caddy serves the UGOS web UI on the Tailscale name at :9943 with a valid certificate, so there is no self-signed warning to click through. Direct :9443 kept as fallback.
 - **iPhone backup** stack: encrypted daily backup over Wi-Fi (usbmuxd + netmuxd + libimobiledevice). First full backup over USB (93 GB). iOS 27 wants the PIN for every backup, so it runs in the evening with an ntfy PIN prompt.
 - **HTTPS and passkeys** (#6): Caddy serves Home (:3443), Mission Control (:8843) and Netwatch (:8793) on the Tailscale name with a Tailscale certificate. Plain-HTTP ports redirect pages and refuse writes, except the TV, public news and playlist paths. The session cookie is `Secure`; loopback is trusted only without `X-Forwarded-*`; the login throttle uses the real client address. Passkeys (Face ID / Touch ID) added in Settings → Account, with the password as fallback. Home now depends on `cryptography`. AdGuard rewrite added. UGOS firewall rule for the tailnet (`100.64.0.0/10`), which it had silently been dropping.
