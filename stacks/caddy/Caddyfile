@@ -1,0 +1,19 @@
+{
+	# Plain-HTTP redirects are done by the apps themselves (they know the exceptions)
+	auto_https disable_redirects
+}
+
+# Home
+{$NAS_TS_NAME}:3443 {
+	reverse_proxy 127.0.0.1:3001
+}
+
+# Mission Control
+{$NAS_TS_NAME}:8843 {
+	reverse_proxy 127.0.0.1:8800
+}
+
+# Netwatch
+{$NAS_TS_NAME}:8793 {
+	reverse_proxy 127.0.0.1:8790
+}
