@@ -1,9 +1,11 @@
+import io
 import json
 import os
 import stat
 import sys
 import tempfile
 import unittest
+import urllib.parse
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
@@ -257,6 +259,140 @@ class Throttling(unittest.TestCase):
             t.fail("a", 100)
         t.reset("a")
         self.assertEqual(t.wait("a", 100), 0)
+
+
+class Fake:
+    """Just enough of a request handler: records what auth sends."""
+    def __init__(self, addr, headers, path="/", command="GET", port=3443):
+        self.client_address = (addr, 5555)
+        self.headers = headers
+        self.path = path
+        self.command = command
+        self.server = type("S", (), {"server_address": ("0.0.0.0", port)})()
+        self.code = None
+        self.sent = {}
+        self.wfile = io.BytesIO()
+        self.close_connection = False
+
+    def send_response(self, code):
+        self.code = code
+
+    def send_header(self, name, value):
+        self.sent[name] = value
+
+    def end_headers(self):
+        pass
+
+
+def fake(addr, headers, **kw):
+    return Fake(addr, headers, **kw)
+
+
+TS = "nas.example.ts.net"
+
+
+class Https(unittest.TestCase):
+    def setUp(self):
+        self.saved = {k: os.environ.get(k) for k in ("NAS_TS_NAME", "HTTPS_PORT", "ADMIN_AUTH_FILE")}
+        os.environ["NAS_TS_NAME"] = TS
+        os.environ["HTTPS_PORT"] = "3443"
+        os.environ["ADMIN_AUTH_FILE"] = AUTH_FILE
+        with open(AUTH_FILE, "w") as f:
+            json.dump({"hash": auth.hash_password("pw"), "key": KEY}, f)
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+        if os.path.exists(AUTH_FILE):
+            os.remove(AUTH_FILE)
+
+    def test_name_is_read_on_every_call_and_normalised(self):
+        os.environ["NAS_TS_NAME"] = "  NAS.Example.TS.net "
+        self.assertEqual(auth.ts_name(), TS)
+        self.assertTrue(auth.https_on())
+        os.environ["NAS_TS_NAME"] = ""
+        self.assertFalse(auth.https_on())
+
+    def test_https_url(self):
+        self.assertEqual(auth.https_url(8843, "/x?y=1"), f"https://{TS}:8843/x?y=1")
+
+    def test_via_proxy_needs_loopback_and_the_header(self):
+        self.assertTrue(auth.via_proxy(fake("127.0.0.1", {"X-Forwarded-Proto": "https"})))
+        self.assertFalse(auth.via_proxy(fake("192.168.1.20", {"X-Forwarded-Proto": "https"})))   # spoofed from the LAN
+        self.assertFalse(auth.via_proxy(fake("127.0.0.1", {})))
+
+    def test_internal_is_loopback_without_forwarding_headers(self):
+        self.assertTrue(auth.internal(fake("127.0.0.1", {})))
+        self.assertFalse(auth.internal(fake("127.0.0.1", {"X-Forwarded-For": "192.168.1.20"})))
+        self.assertFalse(auth.internal(fake("127.0.0.1", {"X-Forwarded-Proto": "https"})))
+        self.assertFalse(auth.internal(fake("192.168.1.20", {})))
+
+    def test_gate_redirects_pages_keeping_the_query(self):
+        h = fake("192.168.1.20", {}, path="/admin/?x=1")
+        self.assertTrue(auth.plain_http_gate(h, 3443))
+        self.assertEqual(h.code, 301)
+        self.assertEqual(h.sent["Location"], f"https://{TS}:3443/admin/?x=1")
+
+    def test_gate_refuses_api_and_post(self):
+        for path, method in (("/api/settings", "GET"), ("/api/login", "POST")):
+            h = fake("192.168.1.20", {}, path=path, command=method)
+            self.assertTrue(auth.plain_http_gate(h, 3443))
+            self.assertEqual(h.code, 403)
+            self.assertTrue(h.close_connection)
+            body = json.loads(h.wfile.getvalue())
+            self.assertEqual(body, {"error": "use the HTTPS address", "url": f"https://{TS}:3443/"})
+
+    def test_gate_lets_through_proxy_internal_and_exempt(self):
+        self.assertFalse(auth.plain_http_gate(fake("127.0.0.1", {"X-Forwarded-Proto": "https"}), 3443))
+        self.assertFalse(auth.plain_http_gate(fake("127.0.0.1", {}), 3443))
+        self.assertFalse(auth.plain_http_gate(fake("192.168.1.20", {}, path="/tv"), 3443, lambda p: p == "/tv"))
+
+    def test_exempt_sees_the_full_path_with_query(self):
+        seen = []
+        auth.plain_http_gate(fake("192.168.1.20", {}, path="/e?topic=opened"), 3443, lambda p: seen.append(p) or True)
+        self.assertEqual(seen, ["/e?topic=opened"])
+
+    def test_gate_is_off_without_a_name(self):
+        os.environ["NAS_TS_NAME"] = ""
+        self.assertFalse(auth.plain_http_gate(fake("192.168.1.20", {}, path="/admin/"), 3443))
+
+    def test_cookies_are_secure_only_with_a_name(self):
+        self.assertIn("; Secure", auth.login_cookie(True, 1000))
+        self.assertIn("; Secure", auth.login_cookie(False, 1000))
+        self.assertIn("; Secure", auth.logout_cookie())
+        os.environ["NAS_TS_NAME"] = ""
+        self.assertNotIn("Secure", auth.login_cookie(True, 1000))
+        self.assertNotIn("Secure", auth.logout_cookie())
+
+    def test_login_redirect_goes_to_the_https_login(self):
+        os.environ["HTTPS_PORT"] = "8843"
+        h = fake("192.168.1.20", {"Host": f"{TS}:8843"}, path="/x?a=1", port=8843)
+        self.assertFalse(auth.require_login(h))
+        self.assertEqual(h.code, 302)
+        want = urllib.parse.quote(f"https://{TS}:8843/x?a=1", safe="")
+        self.assertEqual(h.sent["Location"], f"https://{TS}:3443/?login=1&next={want}")
+
+
+class SafeNextHttps(unittest.TestCase):
+    def setUp(self):
+        self.saved = os.environ.get("NAS_TS_NAME")
+        os.environ["NAS_TS_NAME"] = TS
+
+    def tearDown(self):
+        os.environ.pop("NAS_TS_NAME", None)
+        if self.saved is not None:
+            os.environ["NAS_TS_NAME"] = self.saved
+
+    def test_accepts_our_https_ports(self):
+        for port in (3443, 8843, 8793):
+            url = f"https://{TS}:{port}/x"
+            self.assertEqual(auth.safe_next(url, TS), url)
+
+    def test_rejects_http_other_hosts_and_ports(self):
+        for url in (f"http://{TS}:3001/", "https://evil.example:3443/", f"https://{TS}:9443/"):
+            self.assertEqual(auth.safe_next(url, TS), auth.DEFAULT_NEXT)
 
 
 class Copies(unittest.TestCase):
