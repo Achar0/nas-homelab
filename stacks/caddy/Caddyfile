@@ -18,3 +18,14 @@
 {$NAS_TS_NAME:invalid.ts.net}:8793 {
 	reverse_proxy 127.0.0.1:8790
 }
+
+# UGOS web UI: a valid certificate instead of UGREEN's self-signed one.
+# The direct ports 9999/9443 stay as the fallback if Caddy is down.
+{$NAS_TS_NAME:invalid.ts.net}:9943 {
+	reverse_proxy https://127.0.0.1:9443 {
+		transport http {
+			# Loopback only: UGOS's own certificate can't be verified
+			tls_insecure_skip_verify
+		}
+	}
+}
