@@ -1,8 +1,8 @@
-# iPhone backup: netmuxd (finds the iPhone over Wi-Fi/USB) + libimobiledevice (does the backup)
+# iPhone backup: usbmuxd (USB) + netmuxd (adds Wi-Fi devices) + libimobiledevice (does the backup)
 # Arch base because it ships libimobiledevice 1.4 (Debian still has 1.3, too old for recent iOS).
 FROM archlinux:base
 
-RUN pacman -Syu --noconfirm --needed libimobiledevice uv curl util-linux \
+RUN pacman -Syu --noconfirm --needed libimobiledevice usbmuxd uv curl util-linux coreutils \
     && pacman -Scc --noconfirm
 
 # pymobiledevice3 is only used once, to switch on "Wi-Fi connections" on the iPhone
@@ -17,6 +17,10 @@ RUN curl -fsSL -o /tmp/netmuxd.tgz \
       https://github.com/jkcoxson/netmuxd/releases/download/${NETMUXD_VERSION}/netmuxd-x86_64-unknown-linux-gnu.tar.gz \
     && echo "${NETMUXD_SHA256}  /tmp/netmuxd.tgz" | sha256sum -c - \
     && tar -xzf /tmp/netmuxd.tgz -C /usr/local/bin netmuxd && rm /tmp/netmuxd.tgz
+
+# All libimobiledevice tools talk to netmuxd, which forwards USB devices to usbmuxd
+# and adds the ones it finds on Wi-Fi.
+ENV USBMUXD_SOCKET_ADDRESS=UNIX:/var/run/netmuxd
 
 COPY bin/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*

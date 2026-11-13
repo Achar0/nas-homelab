@@ -1,5 +1,6 @@
 #!/bin/bash
 # Run one backup now. Default: over Wi-Fi. --usb: over the cable.
+# BACKUP_DEBUG=1 in the environment adds protocol debugging to the log.
 #   docker exec -it iphone-backup iphone-backup [--usb]
 set -uo pipefail
 source /usr/local/bin/common.sh
@@ -20,8 +21,8 @@ START=$(date +%s)
 # BACKUP_PASSWORD is read from the environment, never put on the command line.
 # Progress bars are dropped from the log (they made it grow by MBs per run).
 as_user env BACKUP_PASSWORD="$BACKUP_PASSWORD" \
-    idevicebackup2 -u "$(udid)" "${NET[@]}" backup "$BACKUP_ROOT" 2>&1 \
-    | tr '\r' '\n' | grep -av '^\[=*' >>"$LOG_FILE"
+    stdbuf -oL -eL idevicebackup2 -u "$(udid)" "${NET[@]}" ${BACKUP_DEBUG:+-d} backup "$BACKUP_ROOT" 2>&1 \
+    | stdbuf -oL tr '\r' '\n' | grep --line-buffered -av '^\[=*' >>"$LOG_FILE"
 RC=${PIPESTATUS[0]}
 MINS=$(( ($(date +%s) - START) / 60 ))
 

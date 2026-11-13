@@ -1,20 +1,29 @@
 #!/bin/bash
-# Start netmuxd (device discovery over USB + Wi-Fi), then the backup scheduler.
+# Start usbmuxd (USB) and netmuxd (Wi-Fi, in front of usbmuxd), then the scheduler.
+# netmuxd's own USB driver got stuck after long backups (Mux error -8), so USB
+# goes through the standard usbmuxd and netmuxd only adds network devices.
 set -euo pipefail
 
+# both daemons share the pairing records in /data/lockdown
 mkdir -p /data/lockdown
-# netmuxd keeps pairing records in /data/lockdown and serves the usbmuxd socket
-# that every libimobiledevice tool talks to.
-RUST_LOG=${NETMUXD_LOG:-warn} netmuxd --plist-storage /data/lockdown --socket-path /var/run/usbmuxd &
-NETMUXD_PID=$!
+rm -rf /var/lib/lockdown && ln -s /data/lockdown /var/lib/lockdown
 
-# wait for the socket, then let the unprivileged backup user use it
+# -p: skip "preflight" (it hung on iOS 27; pairing is done once by iphone-pair)
+usbmuxd -f -v -p -l /data/usbmuxd.log &   # listens on /var/run/usbmuxd
+USBMUXD_PID=$!
 for _ in $(seq 50); do [ -S /var/run/usbmuxd ] && break; sleep 0.2; done
-chmod 666 /var/run/usbmuxd
 
-trap 'kill $NETMUXD_PID 2>/dev/null; exit 0' TERM INT
+RUST_LOG=${NETMUXD_LOG:-warn} netmuxd --plist-storage /data/lockdown \
+    --upstream-usbmuxd /var/run/usbmuxd --socket-path /var/run/netmuxd &
+NETMUXD_PID=$!
+for _ in $(seq 50); do [ -S /var/run/netmuxd ] && break; sleep 0.2; done
+
+# let the unprivileged backup user use both sockets
+chmod 666 /var/run/usbmuxd /var/run/netmuxd
+
+trap 'kill $USBMUXD_PID $NETMUXD_PID 2>/dev/null; exit 0' TERM INT
 scheduler &
-# if netmuxd dies, exit so Docker restarts the container
-wait -n "$NETMUXD_PID" $!
-echo "netmuxd or scheduler exited, restarting container" >&2
+# if any of them dies, exit so Docker restarts the container
+wait -n "$USBMUXD_PID" "$NETMUXD_PID" $!
+echo "a daemon exited, restarting container" >&2
 exit 1
