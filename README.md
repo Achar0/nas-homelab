@@ -416,15 +416,16 @@ The admin pages are served over HTTPS by Caddy ([§3](#3-services)) on the NAS's
 1. Tailscale admin console: switch on HTTPS Certificates (below, step 1).
 2. Deploy the new Home, Mission Control and Netwatch code with `NAS_TS_NAME` empty (loopback narrowing is already active, plain HTTP behaves as before).
 3. Deploy Caddy and verify `https://<name>:8793` answers `302` to the login and `/api/internal/layout` on :3443 answers `401`.
-4. Add the AdGuard rewrite.
+4. Add the AdGuard rewrite and the UGOS firewall rule for the tailnet (below, steps 2 and 3).
 5. Set `NAS_TS_NAME` in the three `.env` files and recreate the stacks.
 
 **One-time steps by the owner:**
 
 1. Tailscale admin console → DNS → switch on **HTTPS Certificates** (and MagicDNS).
 2. AdGuard Home → Filters → DNS rewrites: `<nas-name>.<tailnet>.ts.net` → `192.168.1.14`. At home the name then resolves to the LAN address, so passkeys work without Tailscale; away from home Tailscale's MagicDNS gives the tailnet address.
-3. Put `NAS_TS_NAME=<nas-name>.<tailnet>.ts.net` in `.env` of `caddy`, `home`, `mission-control` and `netwatch` on the NAS (the name is in `docker exec tailscale tailscale status --json`, `CertDomains`), then `docker compose up -d` in each (`--build` for Home and Mission Control web after code changes).
-4. Uptime Kuma: an HTTP(s) monitor for `https://<nas-name>.<tailnet>.ts.net:3443/` with the ntfy notification (set in the UI, not in git).
+3. UGOS → Control Panel → Security → Firewall: **allow source `100.64.0.0/255.192.0.0`** (the tailnet), all ports. The UGOS firewall (`UG_INPUT`) only accepts `192.168.1.0/24` on `eth0` and Docker's `172.16.0.0/12`, then drops everything else, so without this rule nothing on the NAS answers on its tailnet address (`100.x`), and with Tailscale on the name resolves exactly there. Add it in the UI, not with `iptables`: UGOS regenerates its chains.
+4. Put `NAS_TS_NAME=<nas-name>.<tailnet>.ts.net` in `.env` of `caddy`, `home`, `mission-control` and `netwatch` on the NAS (the name is in `docker exec tailscale tailscale status --json`, `CertDomains`), then `docker compose up -d` in each (`--build` for Home and Mission Control web after code changes).
+5. Uptime Kuma: the existing "Homepage" monitor on `http://192.168.1.14:3001` follows the redirect to the HTTPS address, so it already goes down if Caddy or the certificate fails.
 
 **Plain HTTP once `NAS_TS_NAME` is set.** Ports 3001, 8800 and 8790 on `192.168.1.14` stop serving the admin side: pages answer `301` to the HTTPS address, POST and API calls get `403`. Guest pages included: with `NAS_TS_NAME` set, :3001 redirects to HTTPS too. Exceptions, on Home only, GET/HEAD only: `/tv` and `/tv/…`, `/api/public/tv`, `/api/news` (the public view, not `topic=opened`) and `/iptv.m3u`, so the Fire TV and IPTV players keep working. Without `NAS_TS_NAME` everything stays plain HTTP as before.
 
@@ -468,7 +469,8 @@ Known limits of HTTPS:
 - **Secure DNS / iCloud Private Relay on a device at home:** the device bypasses AdGuard, so the Tailscale name doesn't resolve to the LAN address and HTTPS fails (without Tailscale). Turn them off for the home Wi-Fi, or connect Tailscale.
 - **Devices that bypass AdGuard** (secure DNS, Private Relay) also lose the guest page at home, because :3001 now redirects to the HTTPS name they can't resolve. The TV page and playlist still work.
 - **Emergency fallback:** if Caddy or the certificate fails, blank `NAS_TS_NAME` in the `.env` of `home`, `mission-control` and `netwatch` and run `docker compose up -d` in each. Plain-HTTP access with the password comes back.
-- **Caddy down:** the admin pages are unreachable over HTTPS (plain HTTP no longer serves them). Uptime Kuma alerts on the Home HTTPS monitor; fix with `docker compose up -d` in `caddy`.
+- **Caddy down:** the admin pages are unreachable over HTTPS (plain HTTP no longer serves them). Uptime Kuma's "Homepage" monitor alerts; fix with `docker compose up -d` in `caddy`.
+- **Stale DNS on a phone:** after switching Tailscale off, iOS may keep the tailnet address for the name for a while. It still works thanks to the firewall rule above; airplane mode on/off clears the cache.
 
 The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features, operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
 
@@ -476,7 +478,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-13**
 
-- **HTTPS and passkeys** (#6): Caddy serves Home (:3443), Mission Control (:8843) and Netwatch (:8793) on the Tailscale name with a Tailscale certificate. Plain-HTTP ports redirect pages and refuse writes, except the TV, public news and playlist paths. The session cookie is `Secure`; loopback is trusted only without `X-Forwarded-*`; the login throttle uses the real client address. Passkeys (Face ID / Touch ID) added in Settings → Account, with the password as fallback. Home now depends on `cryptography`. AdGuard rewrite added and a Kuma monitor on the HTTPS address.
+- **HTTPS and passkeys** (#6): Caddy serves Home (:3443), Mission Control (:8843) and Netwatch (:8793) on the Tailscale name with a Tailscale certificate. Plain-HTTP ports redirect pages and refuse writes, except the TV, public news and playlist paths. The session cookie is `Secure`; loopback is trusted only without `X-Forwarded-*`; the login throttle uses the real client address. Passkeys (Face ID / Touch ID) added in Settings → Account, with the password as fallback. Home now depends on `cryptography`. AdGuard rewrite added. UGOS firewall rule for the tailnet (`100.64.0.0/10`), which it had silently been dropping.
 
 **2026-11-08**
 
