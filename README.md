@@ -138,6 +138,7 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Netwatch | http://192.168.1.14:8790 | `netwatch` | Connection map and attacker flags (own code) |
 | Mission Control | http://192.168.1.14:8800 | `mission-control` | Performance history (1 year) + service stats, one screen, needs the admin login (own code + Prometheus) |
 | Minecraft | `192.168.1.14:25565` | `minecraft_server` | Fabric server, whitelisted; **normally stopped** |
+| iPhone backup | — | `iphone-backup` | Nightly encrypted full iPhone backup over Wi-Fi to the owner's home folder (netmuxd + libimobiledevice) |
 | Tailscale | — | `tailscale` | Remote access: node `nas` plus a subnet route for the home LAN |
 | Firefox | http://192.168.1.14:5888 | UGREEN app (`@appstore`) | Browser on the NAS; also used for headless screenshots |
 | UGOS / Theater | https://192.168.1.14:9443 | built in | NAS admin, 影视中心 (media library) |
@@ -145,6 +146,11 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 Containers are named `name-port` (`autobangumi-7892`), except `tailscale` (no port) and the UGOS-managed apps.
 
 Notes per service:
+
+- **iPhone backup**
+  - Same kind of backup as Finder/iTunes (apps, settings, messages, photos), encrypted with `BACKUP_PASSWORD` from `.env`. Without that password the backup can't be restored. `BACKUP_DIR` in `.env` sets the target folder.
+  - netmuxd finds the iPhone by mDNS (`_apple-mobdev2._tcp`), so the container uses host networking. The scheduler checks every 15 min and backs up once per day between 01:00 and 06:00 (any hour once 48 h overdue), incrementally. ntfy alert on a failed run or after 72 h without a good backup.
+  - One-time setup with the iPhone on the NAS's USB port: `docker exec -it iphone-backup iphone-pair` (pair, turn on Wi-Fi connections, turn on encryption), then a first full backup with `iphone-backup --usb`. `iphone-status` shows the state; `data/status.json` is there for dashboards.
 
 - **AdGuard Home**
   - Port 53 is bound to `192.168.1.14` only. Binding `0.0.0.0:53` clashes with the dnsmasq that UGOS runs for its VMs.
@@ -422,6 +428,10 @@ Root-only tasks:
 The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features (HTTPS/passkeys), operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
 
 ## 12. Changelog
+
+**2026-11-13**
+
+- **iPhone backup** stack: automatic nightly encrypted backup over Wi-Fi (netmuxd + libimobiledevice), failure alerts through ntfy.
 
 **2026-11-08**
 

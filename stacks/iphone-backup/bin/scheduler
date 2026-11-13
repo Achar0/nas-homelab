@@ -1,0 +1,33 @@
+#!/bin/bash
+# Every 15 min: if the last good backup is old enough and we are in the night
+# window (or it's very overdue), back up as soon as the iPhone shows up on Wi-Fi.
+set -uo pipefail
+source /usr/local/bin/common.sh
+
+WINDOW_START=${WINDOW_START:-1}    # hour, inclusive  (phone charging at night)
+WINDOW_END=${WINDOW_END:-6}        # hour, exclusive
+MIN_HOURS=${MIN_HOURS:-20}         # don't back up more often than this
+OVERDUE_HOURS=${OVERDUE_HOURS:-48} # past this, try at any hour
+ALERT_HOURS=${ALERT_HOURS:-72}     # past this, send one ntfy alert per day
+
+while true; do
+    sleep 900
+    [ -n "$(udid)" ] || continue                     # not paired yet
+    LAST=$(cat "$STATE/last_success" 2>/dev/null || echo 0)
+    AGE_H=$(( ($(date +%s) - LAST) / 3600 ))
+    HOUR=$((10#$(date +%H)))
+
+    if [ "$AGE_H" -ge "$ALERT_HOURS" ] && [ "$(cat "$STATE/alerted" 2>/dev/null)" != "$(date +%F)" ]; then
+        date +%F > "$STATE/alerted"
+        notify "iPhone not backed up" "Last good backup ${AGE_H} h ago. Is the iPhone on home Wi-Fi?" high
+    fi
+
+    [ "$AGE_H" -ge "$MIN_HOURS" ] || continue
+    if [ "$HOUR" -ge "$WINDOW_START" ] && [ "$HOUR" -lt "$WINDOW_END" ] || [ "$AGE_H" -ge "$OVERDUE_HOURS" ]; then
+        if visible -n; then
+            iphone-backup || true
+        else
+            write_status waiting "iPhone not seen on Wi-Fi"
+        fi
+    fi
+done

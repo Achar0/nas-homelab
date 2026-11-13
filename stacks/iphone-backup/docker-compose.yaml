@@ -1,0 +1,22 @@
+services:
+  iphone-backup:
+    build: .
+    image: iphone-backup:local
+    container_name: iphone-backup
+    restart: unless-stopped
+    network_mode: host        # mDNS discovery of the iPhone on the LAN
+    env_file:
+      - .env                  # BACKUP_PASSWORD, NTFY_URL, BACKUP_DIR (not in git)
+    environment:
+      TZ: Europe/Rome
+      PUID: 1000              # backup files belong to this NAS user
+      PGID: 10
+      WINDOW_START: 1         # nightly window (hours), phone usually charging
+      WINDOW_END: 6
+      MIN_HOURS: 20
+    volumes:
+      - ${BACKUP_DIR:?set BACKUP_DIR in .env}:/backup   # personal folder on the NAS
+      - ./data:/data          # pairing records, UDID, log, status.json
+      - /dev/bus/usb:/dev/bus/usb   # USB, for the one-time pairing
+    device_cgroup_rules:
+      - "c 189:* rmw"         # allow USB devices plugged in after start

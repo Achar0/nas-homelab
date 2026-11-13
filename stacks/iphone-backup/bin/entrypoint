@@ -1,0 +1,20 @@
+#!/bin/bash
+# Start netmuxd (device discovery over USB + Wi-Fi), then the backup scheduler.
+set -euo pipefail
+
+mkdir -p /data/lockdown
+# netmuxd keeps pairing records in /data/lockdown and serves the usbmuxd socket
+# that every libimobiledevice tool talks to.
+RUST_LOG=${NETMUXD_LOG:-warn} netmuxd --plist-storage /data/lockdown --socket-path /var/run/usbmuxd &
+NETMUXD_PID=$!
+
+# wait for the socket, then let the unprivileged backup user use it
+for _ in $(seq 50); do [ -S /var/run/usbmuxd ] && break; sleep 0.2; done
+chmod 666 /var/run/usbmuxd
+
+trap 'kill $NETMUXD_PID 2>/dev/null; exit 0' TERM INT
+scheduler &
+# if netmuxd dies, exit so Docker restarts the container
+wait -n "$NETMUXD_PID" $!
+echo "netmuxd or scheduler exited, restarting container" >&2
+exit 1

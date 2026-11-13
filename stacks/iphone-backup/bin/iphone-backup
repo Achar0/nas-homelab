@@ -1,0 +1,37 @@
+#!/bin/bash
+# Run one backup now. Default: over Wi-Fi. --usb: over the cable.
+#   docker exec -it iphone-backup iphone-backup [--usb]
+set -uo pipefail
+source /usr/local/bin/common.sh
+
+[ -n "$(udid)" ] || { echo "Not paired yet: run iphone-pair first"; exit 1; }
+[ -n "${BACKUP_PASSWORD:-}" ] || { echo "BACKUP_PASSWORD missing in .env"; exit 1; }
+
+if [ "${1:-}" = "--usb" ]; then NET=(); WHERE=USB; else NET=(-n); WHERE=Wi-Fi; fi
+
+# only one backup at a time (scheduler and manual runs share the lock)
+exec 9>"$STATE/backup.lock"
+flock -n 9 || { echo "A backup is already running"; exit 1; }
+
+as_user mkdir -p "$BACKUP_ROOT"
+log "Backup started over $WHERE"
+START=$(date +%s)
+# idevicebackup2 is incremental: it only transfers what changed since last time.
+# BACKUP_PASSWORD is read from the environment, never put on the command line.
+as_user env BACKUP_PASSWORD="$BACKUP_PASSWORD" \
+    idevicebackup2 -u "$(udid)" "${NET[@]}" backup "$BACKUP_ROOT" >>"$LOG_FILE" 2>&1
+RC=$?
+MINS=$(( ($(date +%s) - START) / 60 ))
+
+# idevicebackup2 sometimes exits 0 on failure, so also check its last lines
+if [ $RC -eq 0 ] && tail -n 5 "$LOG_FILE" | grep -q "Backup Successful"; then
+    date +%s > "$STATE/last_success"
+    log "Backup OK in ${MINS} min"
+    write_status ok "Backup OK in ${MINS} min"
+else
+    REASON=$(tail -n 3 "$LOG_FILE" | tr '"\n' "' " | cut -c1-200)
+    log "Backup FAILED (rc=$RC) after ${MINS} min"
+    write_status failed "$REASON"
+    notify "iPhone backup failed" "Over $WHERE after ${MINS} min: $REASON" high
+    exit 1
+fi
