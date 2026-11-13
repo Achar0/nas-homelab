@@ -6,6 +6,8 @@ import { esc } from "./lib.js";
 
 const $ = (id) => document.getElementById(id);
 const EXPANDED_MS = 5000;
+// Netwatch: its HTTPS port (8793) on HTTPS pages, the plain port (8790) otherwise
+const netwatchUrl = location.protocol === "https:" ? `https://${location.hostname}:8793` : `http://${location.hostname}:8790`;
 let netState = null, preview = null, big = null, timer = null;
 
 async function fetchState() {
@@ -59,7 +61,7 @@ export const connections = {
           <p class="context" id="g-context">&nbsp;</p>
         </div>
         <div class="head-right">
-          <a class="open" href="http://${location.hostname}:8790" target="_blank" rel="noopener">Open Netwatch ↗</a>
+          <a class="open" href="${netwatchUrl}" target="_blank" rel="noopener">Open Netwatch ↗</a>
           <button class="close" id="g-close" aria-label="Close">✕</button>
         </div>
       </header>`;

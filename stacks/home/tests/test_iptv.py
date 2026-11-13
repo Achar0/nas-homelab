@@ -207,6 +207,61 @@ class Lists(unittest.TestCase):
         self.assertEqual(iptv.channels(l), [{"name": "Channel A", "group": "News", "state": "online", "url": "http://x/1"}])
 
 
+class Curate(unittest.TestCase):
+    FEEDS = [{"channel": c, "id": "SD", "languages": l} for c, l in (("A.us", ["eng"]), ("B.it", ["ita"]), ("C.cn", ["zho"]), ("D.de", ["deu"]),
+                                                                     ("E.us", ["eng"]), ("F.us", ["eng"]), ("X.us", ["eng"]))]
+    CHANNELS = [{"id": "A.us", "categories": ["news"]}, {"id": "B.it", "categories": []}, {"id": "C.cn", "categories": []}, {"id": "D.de", "categories": []},
+                {"id": "E.us", "categories": ["religious"]}, {"id": "F.us", "categories": ["business"]}, {"id": "X.us", "categories": [], "is_nsfw": True}]
+    KNOWN = iptv.catalog(FEEDS, CHANNELS)
+
+    def row(self, name, tvg="", group=""):
+        tag = f' tvg-id="{tvg}"' if tvg else ""
+        return {"info": f'#EXTINF:-1{tag} group-title="{group}",{name}', "url": f"http://{name}/1", "opts": []}
+
+    def section(self, *args):
+        return iptv.section(self.row(*args), self.KNOWN)
+
+    def test_languages_choose_the_section(self):
+        self.assertEqual(self.section("News", "A.us@SD"), iptv.ENGLISH)
+        self.assertEqual(self.section("Rai 1", "B.it@SD"), iptv.ITALIAN)
+
+    def test_other_languages_and_unknown_channels_are_dropped(self):
+        self.assertIsNone(self.section("Das Erste", "D.de@SD"))
+        self.assertIsNone(self.section("Mystery", "Nope.us@SD"))
+
+    def test_chinese_needs_a_recognised_broadcaster(self):
+        self.assertEqual(self.section("CCTV-1", "C.cn@SD"), iptv.CHINESE)
+        self.assertEqual(self.section("湖南卫视"), iptv.CHINESE)
+        self.assertIsNone(self.section("Bread TV", "C.cn@SD"))
+        self.assertIsNone(self.section("Some Chinese Stream"))
+
+    def test_chinese_kids_and_music_numbers_are_dropped(self):
+        for name in ("CCTV-14 (1080p)", "CCTV14", "CCTV-15", "少儿频道"):
+            self.assertIsNone(self.section(name, "C.cn@SD"), name)
+
+    def test_blocked_backgrounds_are_dropped(self):
+        self.assertIsNone(self.section("Plain", "E.us@SD"))
+        self.assertIsNone(self.section("Plain", "A.us@SD", "Kids;Religious"))
+        self.assertIsNone(self.section("Plain", "A.us@SD", "Music"))
+        self.assertIsNone(self.section("Plain", "X.us@SD"))
+        self.assertIsNone(self.section("TBN UK", "A.us@SD"))
+
+    def test_partisan_news_is_dropped(self):
+        for name in ("Newsmax TV", "OAN Plus", "One America News Network", "Telesur English HD", "Fox News Channel", "MS NOW", "The Young Turks"):
+            self.assertIsNone(self.section(name, "A.us@SD"), name)
+
+    def test_motorsport_and_finance_have_their_sections(self):
+        self.assertEqual(self.section("Sky Sports F1", "A.us@SD"), iptv.MOTORSPORT)
+        self.assertEqual(self.section("Plain", "F.us@SD"), iptv.FINANCE)
+        self.assertEqual(self.section("Bloomberg TV", "A.us@SD"), iptv.FINANCE)
+
+    def test_sections_come_in_menu_order_with_the_new_group(self):
+        rows = [self.row("Bloomberg", "A.us@SD", "Business"), self.row("Rai 1", "B.it@SD"), self.row("CNN", "A.us@SD"), self.row("CCTV-1")]
+        out = iptv.curate(rows, self.KNOWN)
+        self.assertEqual([r["info"].rsplit(",", 1)[-1] for r in out], ["CCTV-1", "CNN", "Rai 1", "Bloomberg"])
+        self.assertEqual(out[3]["info"], '#EXTINF:-1 group-title="Finanza" tvg-id="A.us@SD",Bloomberg')
+
+
 class Check(unittest.TestCase):
     PAGES = {"http://a/l": (MEDIA, .1), "http://a/s3.ts": (VIDEO, 1.0)}
     TEXT = "#EXTM3U\n#EXTINF:-1,A\nhttp://a/l\n"

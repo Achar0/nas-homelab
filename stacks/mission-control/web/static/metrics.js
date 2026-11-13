@@ -44,7 +44,10 @@ export const METRICS = [
 import { formatBitrate, formatSize, formatPlain, formatMs, formatCount } from "./lib.js";
 
 // Links use the address the page was opened with (LAN IP, Tailscale IP or MagicDNS name all work)
-const at = (port, scheme = "http") => `${scheme}://${location.hostname}:${port}`;
+// On HTTPS pages, our own apps are linked on their HTTPS port (Home 3443, Mission Control 8843, Netwatch 8793)
+const HTTPS_PORTS = { 3001: 3443, 8800: 8843, 8790: 8793 };
+const at = (port, scheme = "http") =>
+  location.protocol === "https:" && HTTPS_PORTS[port] ? `https://${location.hostname}:${HTTPS_PORTS[port]}` : `${scheme}://${location.hostname}:${port}`;
 
 // Same apps as Homepage's dock, plus Homepage itself. mono = single-colour icon (tinted by CSS)
 export const DOCK = [

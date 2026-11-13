@@ -7,6 +7,12 @@ The password hash and session key live in one JSON file ({"hash": ..., "key": ..
 ADMIN_AUTH_FILE), checked on every call, so a change reaches all three services without a restart.
 Home can write it; the other two mount it read-only.
 If it is missing or invalid, every login and session is refused (fail closed).
+
+HTTPS mode: when NAS_TS_NAME (the NAS's full Tailscale name) is set, a reverse proxy serves the
+three services over HTTPS and sends X-Forwarded-Proto: https from loopback. Cookies become Secure,
+login redirects and "next" targets use the https ports, and plain_http_gate sends other plain-HTTP
+clients to HTTPS. With it unset or empty everything behaves as plain HTTP, as before.
+
 Variable names avoid the words the secret scan in scripts/sync-from-nas.sh looks for.
 """
 import hashlib
@@ -29,10 +35,39 @@ MIN_PASSWORD_LEN = 8
 DEFAULT_AUTH_FILE = "/admin-auth/auth.json"
 LOGIN_PORT = 3001
 NEXT_PORTS = (3001, 8800, 8790)
+HTTPS_LOGIN_PORT = 3443
+HTTPS_NEXT_PORTS = (3443, 8843, 8793)
+LOOPBACK = {"127.0.0.1", "::1"}
 DEFAULT_NEXT = "/admin/"
 SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1}
 MAXMEM = 64 * 1024 * 1024
 _HOSTNAME = re.compile(r"^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)$")
+
+
+def ts_name():
+    """The NAS's full Tailscale name (lowercase), or "" when HTTPS mode is off. Read on every call."""
+    return os.environ.get("NAS_TS_NAME", "").strip().lower()
+
+
+def https_on():
+    return bool(ts_name())
+
+
+def https_url(port, path):
+    return f"https://{ts_name()}:{port}{path}"
+
+
+def via_proxy(handler):
+    """True for a request the local reverse proxy forwarded from an HTTPS client."""
+    return (handler.client_address[0] in LOOPBACK
+            and handler.headers.get("X-Forwarded-Proto") == "https")
+
+
+def internal(handler):
+    """True for a direct local call (another service on this machine), not via the proxy."""
+    return (handler.client_address[0] in LOOPBACK
+            and handler.headers.get("X-Forwarded-Proto") is None
+            and handler.headers.get("X-Forwarded-For") is None)
 
 
 def _parse_hash(stored):
@@ -168,6 +203,8 @@ def log_out_everywhere():
 
 def startup_check(log):
     """Say at start-up why every login would be refused; never the values themselves."""
+    if not ts_name():
+        log("HTTPS mode is off: NAS_TS_NAME is not set, serving plain HTTP")
     if configured():
         return True
     log(f"admin login is off: {auth_file()} is missing or invalid, everything locked stays locked")
@@ -190,9 +227,13 @@ def login_ok(pw):
     return configured() and verify_password(pw, _stored_hash())
 
 
+def _secure():
+    return "; Secure" if https_on() else ""
+
+
 def login_cookie(remember, now):
     expires = int(now) + (REMEMBER_S if remember else SESSION_S)
-    value = f"{COOKIE}={make_token(_key(), expires)}; HttpOnly; SameSite=Strict; Path=/"
+    value = f"{COOKIE}={make_token(_key(), expires)}; HttpOnly; SameSite=Strict; Path=/{_secure()}"
     return value + f"; Max-Age={REMEMBER_S}" if remember else value
 
 
@@ -205,7 +246,7 @@ def was_remembered(cookie_header, now):
 
 
 def logout_cookie():
-    return f"{COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+    return f"{COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{_secure()}"
 
 
 def safe_next(url, hostname):
@@ -214,8 +255,12 @@ def safe_next(url, hostname):
         return DEFAULT_NEXT
     try:
         u = urllib.parse.urlsplit(url)
-        ok = (u.scheme == "http" and u.username is None and u.password is None
-              and u.hostname == hostname.strip("[]").lower() and u.port in NEXT_PORTS)
+        if https_on():
+            scheme, host, ports = "https", ts_name(), HTTPS_NEXT_PORTS
+        else:
+            scheme, host, ports = "http", hostname.strip("[]").lower(), NEXT_PORTS
+        ok = (u.scheme == scheme and u.username is None and u.password is None
+              and u.hostname == host and u.port in ports)
     except (ValueError, AttributeError):
         return DEFAULT_NEXT
     return url if ok else DEFAULT_NEXT
@@ -247,13 +292,35 @@ def require_login(handler):
         return True
     path = handler.path.split("?")[0]
     hostname = request_hostname(handler)
-    if path.startswith("/api/") or handler.command not in ("GET", "HEAD") or not hostname:
+    if path.startswith("/api/") or handler.command not in ("GET", "HEAD") or not (hostname or https_on()):
         _send(handler, 401, json.dumps({"error": "login required"}).encode())
+        return False
+    if https_on():
+        here = urllib.parse.quote(https_url(os.environ.get("HTTPS_PORT", ""), handler.path), safe="")
+        _send(handler, 302, location=https_url(HTTPS_LOGIN_PORT, f"/?login=1&next={here}"))
         return False
     port = handler.server.server_address[1]
     here = urllib.parse.quote(f"http://{hostname}:{port}{handler.path}", safe="")
     _send(handler, 302, location=f"http://{hostname}:{LOGIN_PORT}/?login=1&next={here}")
     return False
+
+
+def plain_http_gate(handler, https_port, exempt=lambda path: False):
+    """In HTTPS mode, answer plain-HTTP requests from the network. True if it answered.
+
+    Pages get a 301 to HTTPS, keeping the query; the API and other methods get a 403.
+    Proxied and internal requests pass, and so does anything exempt(path) accepts;
+    exempt receives the full request path, query string included.
+    """
+    if not https_on() or via_proxy(handler) or internal(handler) or exempt(handler.path):
+        return False
+    if handler.command in ("GET", "HEAD") and not handler.path.startswith("/api/"):
+        _send(handler, 301, location=https_url(https_port, handler.path))
+    else:
+        handler.close_connection = True   # the body is never read
+        body = {"error": "use the HTTPS address", "url": https_url(https_port, "/")}
+        _send(handler, 403, json.dumps(body).encode())
+    return True
 
 
 class Throttle:

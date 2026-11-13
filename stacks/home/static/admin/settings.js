@@ -1,8 +1,12 @@
 // Settings page: every change saves at once through /api/settings/*, then the page redraws from the server.
 import { esc, moveItem } from "/lib.js";
+import { bufToB64url, toCreateOptions, passkeysAvailable } from "/passkey.js";
 
 const $ = (id) => document.getElementById(id);
-const at = (port, scheme = "http") => `${scheme}://${location.hostname}:${port}`;
+// On HTTPS pages, our own apps are linked on their HTTPS port (Home 3443, Mission Control 8843, Netwatch 8793)
+const HTTPS_PORTS = { 3001: 3443, 8800: 8843, 8790: 8793 };
+const at = (port, scheme = "http") =>
+  location.protocol === "https:" && HTTPS_PORTS[port] ? `https://${location.hostname}:${HTTPS_PORTS[port]}` : `${scheme}://${location.hostname}:${port}`;
 const pane = $("pane");
 
 const SECTIONS = { feeds: "News feeds", alerts: "Alert rules", services: "Services & dock", apps: "Apps", account: "Account" };
@@ -22,6 +26,8 @@ const TABS = { dock: "Dock", rail: "Home rail", cards: "Mission Control cards" }
 let S = null;                 // the settings, as last read from the server
 let section = SECTIONS[location.hash.slice(1)] ? location.hash.slice(1) : "feeds";
 let tab = "dock";
+let passkeyList = [];
+let passkeyState = "loading"; // loading | ok | insecure (not the HTTPS name) | error
 let armed = null;             // the destructive button waiting for its second click
 
 // ---------- talking to the server ----------
@@ -51,6 +57,15 @@ function toast(text, bad = false) {
   toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 6000 : 2500);
 }
 
+// The passkey list; off the HTTPS name the server answers 404 and the section shows the secure-address line
+async function loadPasskeys() {
+  passkeyList = [];
+  if (!(await passkeysAvailable())) { passkeyState = "insecure"; return; }
+  const r = await fetch("/api/passkeys").catch(() => null);
+  if (r?.ok) { passkeyList = (await r.json()).passkeys; passkeyState = "ok"; }
+  else passkeyState = r?.status === 404 ? "insecure" : "error";   // 404 = not the HTTPS name
+}
+
 // Save, then redraw from what the server really has, so a refused change goes back by itself
 async function save(path, body) {
   const r = await post(path, body);
@@ -65,7 +80,7 @@ const toggle = (on, label, attrs, disabled = false) =>
   `<button class="tog" role="switch" aria-checked="${on}" aria-label="${esc(label)}" ${attrs}${disabled ? " disabled" : ""}></button>`;
 
 function confirmButton(key, label, confirm) {
-  return `<button class="danger" data-act="arm" data-key="${esc(key)}">${esc(armed === key ? confirm : label)}</button>`;
+  return `<button type="button" class="danger" data-act="arm" data-key="${esc(key)}">${esc(armed === key ? confirm : label)}</button>`;
 }
 
 const moveButtons = (list, id, i, n) => `<span class="move">
@@ -188,9 +203,31 @@ function drawApps() {
   return `<h2>Apps</h2><p class="sub">Each app keeps its own settings. These just take you there.</p><div class="group">${rows}</div>`;
 }
 
+const day = (t) => new Date(t * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+// The HTTPS address for the hint, built only from a .ts.net host so no tailnet name lives in the code
+function secureAddress() {
+  return location.hostname.endsWith(".ts.net") ? `https://${location.hostname}:3443` : "the secure address";
+}
+
+function drawPasskeys() {
+  const head = `<h3>Passkeys</h3>`;
+  if (passkeyState === "loading") return "";
+  if (passkeyState === "error") return `${head}<div class="group"><div class="row"><div class="grow"><small>Couldn't load passkeys.</small></div></div></div>`;
+  if (passkeyState === "insecure") return `${head}<div class="group"><div class="row"><div class="grow"><small>Passkeys work on the secure address: open ${esc(secureAddress())}</small></div></div></div>`;
+  const rows = passkeyList.map((p) => `<div class="row">
+    <div class="grow">${esc(p.name)}<small>Added ${day(p.created)} · Last used ${p.last_used ? day(p.last_used) : "never"}</small></div>
+    ${confirmButton(`pk-${p.id}`, "Remove", "Really remove?")}</div>`).join("");
+  return `${head}<form class="group" id="add-passkey">${rows}
+    <div class="row"><input class="grow" id="pk-name" placeholder="iPhone" maxlength="40" aria-label="Passkey name" autocomplete="off">
+      <button class="btn" id="pk-add">Add passkey</button></div></form>`;
+}
+
 function drawAccount() {
   const field = (id, label, auto) => `<label class="field" for="${id}">${label}<input id="${id}" type="password" required autocomplete="${auto}"></label>`;
   return `<h2>Account</h2><p class="sub">The one admin password for Home, Mission Control and Netwatch.</p>
+    ${drawPasskeys()}
+    <h3>Change password</h3>
     <form class="group" id="change-pw">
       ${field("pw-current", "Current password", "current-password")}
       ${field("pw-new", "New password", "new-password")}
@@ -224,7 +261,13 @@ const reorder = (list, from, to) => save("/api/settings/order", { list, ids: mov
 
 async function fireArmed(key) {
   armed = null;
-  if (key === "logout-all") {
+  if (key.startsWith("pk-")) {
+    const r = await post(`/api/passkeys/${encodeURIComponent(key.slice(3))}/remove`);
+    if (r.ok) toast("Passkey removed.");
+    else if (r.status !== 401) toast(r.data.error || "Couldn't remove the passkey.", true);
+    await loadPasskeys();
+    render();
+  } else if (key === "logout-all") {
     const r = await post("/api/account/logout-everywhere");
     if (r.ok) location.href = "/";
     else if (r.status !== 401) { toast(r.data.error || "That couldn't be saved.", true); render(); }
@@ -259,6 +302,7 @@ $("nav").addEventListener("click", (e) => {
   armed = null;
   history.replaceState(null, "", `#${section}`);
   render();
+  if (section === "account") loadPasskeys().then(render);
 });
 
 pane.addEventListener("click", (e) => {
@@ -291,10 +335,36 @@ pane.addEventListener("submit", async (e) => {
     const ok = await save("/api/settings/feeds", { url, topic: $("f-topic").value, lang: $("f-lang").value });
     if (ok) toast("Feed added.");
     else $("f-url").value = url;
+  } else if (e.target.id === "add-passkey") {
+    await addPasskey();
   } else if (e.target.id === "change-pw") {
     await changePassword();
   }
 });
+
+async function addPasskey() {
+  const name = $("pk-name").value.trim();
+  if (!name) return toast("Give the passkey a name first, like iPhone.", true);
+  $("pk-add").disabled = true;
+  try {
+    const opts = await post("/api/passkeys/options");
+    if (!opts.ok) return opts.status === 401 ? undefined : toast(opts.data.error || "Couldn't add the passkey.", true);
+    const cred = await navigator.credentials.create({ publicKey: toCreateOptions(opts.data.publicKey) });
+    const r = await post("/api/passkeys", {
+      name,
+      clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+      attestationObject: bufToB64url(cred.response.attestationObject),
+    });
+    if (r.ok) toast("Passkey added.");
+    else if (r.status !== 401) toast(r.data.error || "Couldn't add the passkey.", true);
+    if (r.ok) { await loadPasskeys(); render(); }
+  } catch (e) {
+    if (e?.name !== "NotAllowedError") toast("Couldn't add the passkey.", true);   // a cancelled prompt stays quiet
+  } finally {
+    if ($("pk-add")) $("pk-add").disabled = false;
+  }
+  return undefined;
+}
 
 async function changePassword() {
   const current = $("pw-current").value, next = $("pw-new").value;
@@ -348,6 +418,7 @@ $("logout").addEventListener("click", async () => {
 (async () => {
   if (!(await load())) { pane.innerHTML = `<p class="sub">Couldn't load the settings. Reload to try again.</p>`; return; }
   render();
+  if (section === "account") loadPasskeys().then(render);
 })();
 // Pick up new containers while the page is open, but never redraw under someone who is typing
 setInterval(async () => {

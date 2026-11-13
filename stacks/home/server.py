@@ -32,6 +32,7 @@ import feeds
 import guest
 import iptv
 import news_db
+import passkeys
 import settings
 import weather
 
@@ -56,10 +57,24 @@ LOGIN_BODY_LIMIT = 4096
 SETTINGS_BODY_LIMIT = 65536
 IPTV_BODY_LIMIT = 6_000_000      # a playlist file, as JSON text
 FEED_NAME_LIMIT = 80
-LOOPBACK = {"127.0.0.1", "::1"}   # Mission Control and Netwatch on this machine; no reverse proxy runs in front
+PASSKEY_BODY_LIMIT = 16384      # above the 4 KB clientDataJSON cap plus base64url overhead
+HTTPS_PORT = int(os.environ.get("HTTPS_PORT", "3443"))
+
+
+def http_exempt(path):
+    """Plain-HTTP exceptions for GET and HEAD (TV and playlist clients can't do our HTTPS); path includes the query.
+    A path with .. (or an encoded dot) is never exempt, so /tv/../admin/ can't use the TV exception."""
+    p, _, qs = path.partition("?")
+    if ".." in p or "%2e" in p.lower():
+        return False
+    if p in ("/tv", "/api/public/tv", "/iptv.m3u") or p.startswith("/tv/"):
+        return True
+    return p == "/api/news" and "opened" not in urllib.parse.parse_qs(qs).get("topic", [])
 SHOW_LISTS = {"rail_nas": lambda s: s["rail"]["nas"], "rail_services": lambda s: s["rail"]["services"], "cards": lambda s: s["cards"]}
 FEEDS_WAKE = threading.Event()   # set to refresh the news now instead of at the next 15-minute cycle
 THROTTLE = auth.Throttle()
+CHALLENGES = passkeys.Challenges()
+PASSKEYS = passkeys.Store(passkeys.default_path())   # one Store: it locks per instance
 login_lock = threading.Lock()   # one password check at a time: scrypt is deliberately expensive
 lock = threading.Lock()
 os.makedirs(DATA, exist_ok=True)
@@ -282,6 +297,10 @@ def arrivals_tick():
 IPTV_SEED = [u for u in E("IPTV_LISTS", "").split(",") if u]   # only used once, to fill the managed lists
 IPTV_PATH = os.path.join(DATA, "iptv.json")
 IPTV_FILES = os.path.join(DATA, "iptv-files")
+IPTV_CATALOG_PATH = os.path.join(DATA, "iptv-catalog.json")
+IPTV_CATALOG = "https://iptv-org.github.io/api/"       # language and category of every channel
+IPTV_CATALOG_LIMIT = 40_000_000
+IPTV_KNOWN = {}                  # the last catalog that could be read; empty means nothing can be judged yet
 IPTV_EVERY = 6 * 3600
 IPTV_RETRY = 1800                # after a list couldn't be read: sooner than the next regular check
 IPTV_MAX_LISTS = 20
@@ -380,6 +399,26 @@ def iptv_save():
     os.replace(tmp, IPTV_PATH)
 
 
+def iptv_refresh_catalog():
+    """Keeps the last good catalog when iptv-org can't be reached."""
+    global IPTV_KNOWN
+    try:
+        feeds, channels = (json.loads(iptv_fetch(IPTV_CATALOG + name, IPTV_CATALOG_LIMIT, 120)[0]) for name in ("feeds.json", "channels.json"))
+        known = iptv.catalog(feeds, channels)
+        tmp = IPTV_CATALOG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(known, f)
+        os.replace(tmp, IPTV_CATALOG_PATH)
+        IPTV_KNOWN = known
+    except Exception as e:  # noqa: BLE001 - a missing catalog must not stop the check
+        log("iptv catalog not updated:", e)
+
+
+def _iptv_allowed(rows):
+    """Without a catalog nothing is allowed: an unfiltered playlist must never be published."""
+    return iptv.curate(rows, IPTV_KNOWN) if IPTV_KNOWN else []
+
+
 def iptv_run(only=None, now=None):
     """Checks every list, or just the ids in `only`. Reading and probing happen outside the lock."""
     now = now or time.time()
@@ -389,6 +428,7 @@ def iptv_run(only=None, now=None):
     if not targets:
         return
     try:
+        iptv_refresh_catalog()
         fresh, complete = iptv.check_lists(targets, iptv_read, iptv_fetch, now)
     except Exception:
         with IPTV_LOCK:
@@ -399,8 +439,9 @@ def iptv_run(only=None, now=None):
         cur = LATEST["iptv"]
         cur["lists"] = [done.get(lst["id"], lst) for lst in cur["lists"]]   # a list deleted meanwhile stays deleted
         rows = _iptv_rows(cur["lists"])
-        if iptv.usable(rows):
-            cur["playlist"] = iptv.clean(rows, _iptv_head(cur["lists"]))
+        allowed = _iptv_allowed(rows)
+        if iptv.usable(allowed):
+            cur["playlist"] = iptv.clean(allowed, _iptv_head(cur["lists"]))
         cur["counts"] = iptv.counts(rows)
         if only is None:
             cur["checked"] = now if complete else now - IPTV_EVERY + IPTV_RETRY
@@ -440,9 +481,16 @@ def load_iptv():
     except (OSError, ValueError):
         data = {}
     managed = "lists" in data
+    global IPTV_KNOWN
+    try:
+        with open(IPTV_CATALOG_PATH, encoding="utf-8") as f:
+            IPTV_KNOWN = json.load(f)
+    except (OSError, ValueError):
+        IPTV_KNOWN = {}
+    filtered = iptv.CHINESE in data.get("playlist", "")     # a playlist from before the filter is rebuilt right away
     lists = data["lists"] if managed else [iptv.new_list("url", "", u) for u in IPTV_SEED]
     LATEST["iptv"] = {"lists": lists, "playlist": data.get("playlist", ""), "counts": data.get("counts"),
-                      "checked": data.get("checked", 0) if managed else 0, "checking": False}
+                      "checked": data.get("checked", 0) if managed and filtered else 0, "checking": False}
     os.makedirs(IPTV_FILES, exist_ok=True)
     if lists and not managed:
         with IPTV_LOCK:
@@ -476,7 +524,8 @@ def iptv_delete(list_id):
             return False
         cur["lists"] = left
         rows = _iptv_rows(left)
-        cur["playlist"] = iptv.clean(rows, _iptv_head(left)) if iptv.counts(rows)["online"] else ""
+        allowed = _iptv_allowed(rows)
+        cur["playlist"] = iptv.clean(allowed, _iptv_head(left)) if iptv.counts(allowed)["online"] else ""
         cur["counts"] = iptv.counts(rows)
         iptv_save()
     try:
@@ -571,6 +620,15 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def client_addr(self):
+        """Who is asking, for the throttle. Behind Caddy every connection is 127.0.0.1, so use the client
+        address Caddy appended (the last X-Forwarded-For entry; earlier ones could be sent by the client)."""
+        if auth.via_proxy(self):
+            last = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+            if last:
+                return last
+        return self.client_address[0]
+
     def logged_in(self):
         return auth.session_ok(self.headers.get("Cookie"), time.time())
 
@@ -580,13 +638,19 @@ class Handler(SimpleHTTPRequestHandler):
         return resolved == ADMIN_STATIC or resolved.startswith(ADMIN_STATIC + os.sep)
 
     def do_HEAD(self):
+        if auth.plain_http_gate(self, HTTPS_PORT, http_exempt):
+            return
         if self.is_admin_file() and not auth.require_login(self):
             return
         super().do_HEAD()
 
     def do_GET(self):
+        if auth.plain_http_gate(self, HTTPS_PORT, http_exempt):
+            return
         path, _, qs = self.path.partition("?")
         q = urllib.parse.parse_qs(qs)
+        if path == "/api/passkeys":
+            return self.passkey_list()
         if path == "/":
             if self.logged_in():   # never back to ?next: another port just refused this cookie, it would loop
                 return self.redirect(auth.DEFAULT_NEXT)
@@ -617,7 +681,7 @@ class Handler(SimpleHTTPRequestHandler):
             data = {"items": items, "updated": LATEST["news_updated"]}
             return self.json({**data, "errors": LATEST["news_errors"]} if self.logged_in() else data)
         if path == "/api/internal/layout":
-            if self.client_address[0] in LOOPBACK:
+            if auth.internal(self):   # another service here, not a client behind the proxy
                 return self.json(layout_view())
             return self.json({"error": "login required"}, 401)
         if path.startswith("/api/"):
@@ -747,7 +811,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not auth.configured():
             log("login refused:", auth.auth_file(), "is missing or invalid")
             return self.json({"error": "not_configured"}, 503)
-        addr, now = self.client_address[0], time.time()
+        addr, now = self.client_addr(), time.time()
         with login_lock:
             wait = THROTTLE.wait(addr, now)
             if wait:
@@ -770,7 +834,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json({"error": "bad request"}, 400)
         if len(new) < auth.MIN_PASSWORD_LEN:
             return self.json({"error": f"Use at least {auth.MIN_PASSWORD_LEN} characters."}, 400)
-        addr, now = self.client_address[0], time.time()
+        addr, now = self.client_addr(), time.time()
         remembered = auth.was_remembered(self.headers.get("Cookie"), now)
         with login_lock:
             wait = THROTTLE.wait(addr, now)
@@ -786,6 +850,111 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.json({"error": "wrong"}, 403)   # not 401: this session is still fine
             THROTTLE.reset(addr)
         return self.json({"ok": True}, cookie=auth.login_cookie(remembered, now))
+
+    # --- passkeys: every endpoint is 404 unless HTTPS mode is on and Caddy forwarded the request ---
+
+    def passkeys_available(self):
+        return auth.https_on() and auth.via_proxy(self)
+
+    def passkey_bytes(self, body, *keys):
+        """The base64url fields as bytes, or None if one is missing or malformed."""
+        if not all(isinstance(body.get(k), str) for k in keys):
+            return None
+        try:
+            return [passkeys._unb64url(body[k]) for k in keys]
+        except passkeys.PasskeyError:
+            return None
+
+    def passkey_list(self):
+        if not self.passkeys_available():
+            return self.send_error(404)
+        if not auth.require_login(self):
+            return None
+        keep = ("id", "name", "created", "last_used")
+        return self.json({"passkeys": [{k: p.get(k) for k in keep} for p in PASSKEYS.all()]})
+
+    def passkey_post(self, path):
+        if self.refuse_form():
+            return None
+        parts = path.strip("/").split("/")
+        if path == "/api/passkey/login/options":
+            body = self.read_json(PASSKEY_BODY_LIMIT)
+            if body is None:
+                return None
+            return self.json({"publicKey": passkeys.login_options(CHALLENGES.new("login", time.time()))})
+        if path == "/api/passkey/login":
+            return self.passkey_login()
+        if path not in ("/api/passkeys/options", "/api/passkeys") and not (
+                len(parts) == 4 and parts[:2] == ["api", "passkeys"] and parts[3] == "remove"):
+            return self.send_error(404)
+        if not auth.require_login(self):
+            return None
+        body = self.read_json(PASSKEY_BODY_LIMIT)
+        if body is None:
+            return None
+        if path == "/api/passkeys/options":
+            options = passkeys.registration_options(CHALLENGES.new("register", time.time()), PASSKEYS.all())
+            return self.json({"publicKey": options})
+        if path == "/api/passkeys":
+            return self.passkey_register(body)
+        try:
+            removed = PASSKEYS.remove(urllib.parse.unquote(parts[2]))
+        except OSError as e:
+            log("passkey not removed:", e.__class__.__name__)
+            return self.json({"error": "Couldn't save the change on the NAS."}, 503)
+        return self.json({"ok": True}) if removed else self.send_error(404)
+
+    def passkey_register(self, body):
+        fields = self.passkey_bytes(body, "clientDataJSON", "attestationObject")
+        name = body.get("name")
+        if fields is None or not isinstance(name, str):
+            return self.json({"error": "bad request"}, 400)
+        name = name.strip()
+        if not 1 <= len(name) <= passkeys.MAX_NAME or any(ord(c) < 32 or ord(c) == 127 for c in name):
+            return self.json({"error": f"Use a name of 1 to {passkeys.MAX_NAME} characters."}, 400)
+        if len(PASSKEYS.all()) >= passkeys.MAX_PASSKEYS:
+            return self.json({"error": f"You already have {passkeys.MAX_PASSKEYS} passkeys. Remove one first."}, 400)
+        now = time.time()
+        try:
+            entry = passkeys.verify_registration(*fields, lambda c: CHALLENGES.take("register", c, now))
+            if PASSKEYS.get(entry["id"]):   # only known once the attestation is parsed
+                return self.json({"error": "This passkey is already added."}, 400)
+            PASSKEYS.add(entry, name, now)
+        except passkeys.PasskeyError as e:
+            log("passkey refused:", e)   # the reason stays in the log
+            return self.json({"error": "That passkey wasn't accepted. Try again."}, 400)
+        except OSError as e:
+            log("passkey not saved:", e.__class__.__name__)
+            return self.json({"error": "Couldn't save the passkey on the NAS."}, 503)
+        return self.json({"ok": True})
+
+    def passkey_login(self):
+        body = self.read_json(PASSKEY_BODY_LIMIT)
+        if body is None:
+            return None
+        addr, now = self.client_addr(), time.time()
+        with login_lock:
+            wait = THROTTLE.wait(addr, now)
+            if wait:
+                return self.json({"error": "wait", "retry_after": wait}, 429)
+            cred_id = body.get("id")
+            try:
+                fields = self.passkey_bytes(body, "clientDataJSON", "authenticatorData", "signature")
+                if fields is None or not isinstance(cred_id, str):
+                    raise passkeys.PasskeyError("malformed fields")
+                count = passkeys.verify_login(cred_id, *fields, PASSKEYS.get(cred_id),
+                                              lambda c: CHALLENGES.take("login", c, now))
+            except passkeys.PasskeyError as e:
+                log("passkey refused:", e)
+                THROTTLE.fail(addr, now)
+                return self.json({"error": "wrong"}, 401)
+            THROTTLE.reset(addr)
+        try:
+            PASSKEYS.touch(cred_id, count, now)
+        except OSError as e:
+            log("passkey use not saved:", e.__class__.__name__)   # the sign-in itself was fine
+        target = auth.safe_next(body.get("next"), auth.request_hostname(self))
+        return self.json({"ok": True, "next": target}, cookie=auth.login_cookie(bool(body.get("remember")), now))
 
     def logout_everywhere(self):
         if self.refuse_form():
@@ -931,7 +1100,12 @@ class Handler(SimpleHTTPRequestHandler):
         return self.save(switch, wake=True)
 
     def do_POST(self):
+        if auth.plain_http_gate(self, HTTPS_PORT, lambda path: False):   # the HTTP exceptions are GET-only
+            return
         path = self.path.split("?")[0]
+        if path.startswith("/api/passkey") and not self.passkeys_available():
+            self.close_connection = True   # the body stays unread
+            return self.send_error(404)
         if self.from_another_site():
             self.close_connection = True   # the body stays unread
             return self.json({"error": "wrong origin"}, 403)
@@ -939,6 +1113,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.login()
         if path == "/api/logout":
             return self.json({"ok": True}, cookie=auth.logout_cookie())
+        if path.startswith("/api/passkey"):
+            return self.passkey_post(path)
         if not auth.require_login(self):
             return None
         parts = path.strip("/").split("/")

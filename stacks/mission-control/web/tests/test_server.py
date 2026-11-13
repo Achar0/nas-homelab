@@ -104,6 +104,16 @@ class Gate(unittest.TestCase):
     def test_with_a_session_the_page_opens(self):
         self.assertEqual(self.call("/", headers=cookie())[0], 200)
 
+    def test_plain_http_from_the_network_is_redirected_in_https_mode(self):
+        os.environ["NAS_TS_NAME"] = "nas.example.ts.net"
+        self.addCleanup(os.environ.pop, "NAS_TS_NAME", None)
+        real = auth.LOOPBACK
+        auth.LOOPBACK = set()   # the test client is on loopback: pretend it comes from the network
+        self.addCleanup(setattr, auth, "LOOPBACK", real)
+        status, headers, _ = self.call("/")
+        self.assertEqual((status, headers["Location"]), (301, "https://nas.example.ts.net:8843/"))
+        self.assertEqual(self.call("/api/netwatch")[0], 403)
+
     def test_expired_session_refuses(self):
         old = {"Cookie": f"nas_admin={auth.make_token(KEY, time.time() - 1)}"}
         self.assertEqual(self.call("/api/netwatch", headers=old)[0], 401)

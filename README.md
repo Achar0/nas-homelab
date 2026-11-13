@@ -3,8 +3,9 @@
 Technical documentation and configuration for the home NAS (UGREEN DXP4800, UGOS Pro).
 Every Docker stack running on the NAS is mirrored here, with secrets removed, so changes can be reviewed, versioned and rolled back.
 
-- **Home** (guest summary): http://192.168.1.14:3001 — the owner's page is at `/admin/`, behind the admin login
-- **Mission Control** (performance history): http://192.168.1.14:8800 — needs the admin login
+- **Home** (guest summary): http://192.168.1.14:3001 (redirects to `https://<nas-name>.<tailnet>.ts.net:3443` once HTTPS is on; the TV page stays on HTTP)
+- **Home admin** (the owner's page, behind the admin login): `https://<nas-name>.<tailnet>.ts.net:3443/admin/`
+- **Mission Control** (performance history): `https://<nas-name>.<tailnet>.ts.net:8843` — needs the admin login
 - **Last full review:** 2026-11-06
 
 ---
@@ -93,8 +94,11 @@ Harmless kernel message: `btrfs usrquota disabled (failed to load tree)`.
 flowchart LR
   subgraph LAN[Home LAN 192.168.1.0/24]
     Devices[Phones, laptop, TV] -- DNS --> AdGuard
-    Devices -- HTTP --> Homepage
+    Devices -- "HTTP: TV page, playlist" --> Homepage
+    Devices -- HTTPS --> Caddy
     subgraph NAS[NAS 192.168.1.14]
+      Caddy[Caddy :3443 / :8843 / :8793]
+      Caddy --> Homepage & MC & NW
       AdGuard[AdGuard Home :53 / :8080]
       Homepage[Home :3001]
       qBt[qBittorrent :8888 / peers :6888]
@@ -127,7 +131,8 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Service | URL | Stack folder | Purpose |
 |---|---|---|---|
 | AdGuard Home | http://192.168.1.14:8080 | `adguard` | Network-wide ad and tracker blocking (DNS) |
-| Home | http://192.168.1.14:3001 | `home` | Public summary for family and guests, the TV idle page at `/tv` and the clean IPTV playlist at `/iptv.m3u`; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, IPTV lists, dock) needs the admin login (own code) |
+| Caddy | `https://<nas-name>.<tailnet>.ts.net` on :3443 (Home), :8843 (Mission Control), :8793 (Netwatch) | `caddy` | HTTPS in front of the admin pages, with a certificate from Tailscale |
+| Home | `https://<nas-name>.<tailnet>.ts.net:3443` (guest and admin pages; :3001 redirects there, only the TV page, public news and `/iptv.m3u` stay on http://192.168.1.14:3001) | `home` | Public summary for family and guests, the TV idle page at `/tv` and the clean IPTV playlist at `/iptv.m3u`; the owner's page at `/admin/` (attention with urgent takeover + push, news, arrivals, IPTV lists, dock) needs the admin login (own code, passkeys or password) |
 | Homepage (retired) | — | `homepage` | Old gethomepage dashboard; only its docker proxy (`dockerproxy-2375`) still runs |
 | qBittorrent | http://192.168.1.14:8888 | UGREEN app (`@appstore`) | Downloads and seeding |
 | AutoBangumi | http://192.168.1.14:7892 | `autobangumi` | Anime RSS (Mikan) → qBittorrent, renames for the Theater |
@@ -135,8 +140,8 @@ All stacks live in `/volume1/docker/<stack>/` on the NAS and in [`stacks/`](stac
 | Uptime Kuma | http://192.168.1.14:3002 | `uptime-kuma` | Uptime monitors and phone alerts (ntfy) |
 | Dockge | http://192.168.1.14:5001 | `dockge` | Web UI for compose stacks in `/volume1/docker` |
 | Glances | http://192.168.1.14:61208 | `glances` | System metrics, behind its own password (user `glances`) |
-| Netwatch | http://192.168.1.14:8790 | `netwatch` | Connection map and attacker flags (own code) |
-| Mission Control | http://192.168.1.14:8800 | `mission-control` | Performance history (1 year) + service stats, one screen, needs the admin login (own code + Prometheus) |
+| Netwatch | http://192.168.1.14:8790 (redirects to `https://<nas-name>.<tailnet>.ts.net:8793`) | `netwatch` | Connection map and attacker flags (own code) |
+| Mission Control | http://192.168.1.14:8800 (redirects to `https://<nas-name>.<tailnet>.ts.net:8843`) | `mission-control` | Performance history (1 year) + service stats, one screen, needs the admin login (own code + Prometheus) |
 | Minecraft | `192.168.1.14:25565` | `minecraft_server` | Fabric server, whitelisted; **normally stopped** |
 | iPhone backup | — | `iphone-backup` | Daily encrypted full iPhone backup over Wi-Fi to the owner's home folder, started in the evening with a PIN prompt (usbmuxd + netmuxd + libimobiledevice) |
 | Tailscale | — | `tailscale` | Remote access: node `nas` plus a subnet route for the home LAN |
@@ -186,6 +191,11 @@ Notes per service:
   - Key expiry is disabled and the subnet route is approved in the admin console.
   - IP forwarding is already on, because Docker enables it.
   - The old Homepage also accepted its Tailscale address and MagicDNS name (`HOMEPAGE_ALLOWED_HOSTS`, in its `.env`).
+- **Caddy**
+  - Official `caddy` image, host network, stack [`stacks/caddy`](stacks/caddy/). It terminates HTTPS on 3443 (Home), 8843 (Mission Control) and 8793 (Netwatch) and proxies to the apps on `127.0.0.1`.
+  - The certificate for `<nas-name>.<tailnet>.ts.net` comes from Tailscale's CA through `tailscaled`'s local socket (the folder `tailscale/run/` is mounted at `/var/run/tailscale`). Caddy renews it by itself; its state is in `data/` and `config/` (not in git).
+  - The name is set in `.env` (`NAS_TS_NAME`, see `.env.example`) and also in the Home, Mission Control and Netwatch `.env`, which switches their plain-HTTP ports to redirect/refuse mode.
+  - `auto_https disable_redirects`: the apps do the HTTP redirects themselves, because some plain-HTTP paths must keep working.
 - **Dockge**
   - Mounts the Docker socket, which is root-equivalent, so its login must stay strong.
   - It does not manage the `@appstore` stacks.
@@ -228,7 +238,7 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 **Who sees what.** Design: [`docs/superpowers/specs/2026-11-07-public-summary-design.md`](docs/superpowers/specs/2026-11-07-public-summary-design.md).
 
 - **Guests at `/`:** plain-language status (only "Everything's running" when every source could be read), internet speed, free storage, news without the *Opened* tab, downloads, **Open UGOS** (each person logs in with their own UGOS account) and **Admin**. Recognised episodes appear by name; everything else is only counted ("1 other download"). Intrusion alerts never reach this page. All of it comes from `/api/public/summary` and `/api/news`.
-- **IPTV check:** every 6 h the NAS downloads a real video segment from each channel of the managed playlists. The rail card shows how many are online, lagging (segment under 1.5× real time) or offline and opens `/admin/iptv.html`, where lists are added by address or file, removed and checked on demand. `/iptv.m3u` serves only the fast channels. If fewer than 20 pass, the previous playlist is kept. `IPTV_LISTS` in `.env` only fills the first lists; the checker refuses private addresses, so a list can't reach the NAS's own services.
+- **IPTV check:** every 6 h the NAS downloads a real video segment from each channel of the managed playlists. The rail card shows how many are online, lagging (segment under 1.5× real time) or offline and opens `/admin/iptv.html`, where lists are added by address or file, removed and checked on demand. `/iptv.m3u` serves only the fast channels. It is also filtered with the iptv-org catalog (kept in `data/iptv-catalog.json`, the last good copy is reused): only English, Italian and recognised Chinese broadcasters stay, religious, kids, music, adult and partisan news channels go, and the menu reads Lingua cinese, Lingua inglese, Lingua italiana, Motorsport, Finanza. Without a catalog the previous playlist is kept. If fewer than 20 pass, the previous playlist is kept. `IPTV_LISTS` in `.env` only fills the first lists; the checker refuses private addresses, so a list can't reach the NAS's own services.
 - **TV at `/tv`:** the TV idle screen, public and without buttons. Clock, Milan weather from Open-Meteo (the NAS fetches it every 30 min; hidden after 3 h without data), one what-to-bring tip, rotating news in its original language and recognised episodes. Labels are Simplified Chinese with a small English line. The status line appears only when something is wrong. Data from `/api/public/tv` and `/api/news`. Design: [`docs/superpowers/specs/2026-11-08-tv-idle-screen-design.md`](docs/superpowers/specs/2026-11-08-tv-idle-screen-design.md).
 - **Owner at `/admin/`:** everything described below, behind the admin login.
 
@@ -236,8 +246,10 @@ The page on **:3001** (own code, stack [`stacks/home`](stacks/home/)). It replac
 
 - **Where it lives:** `/volume1/docker/admin-auth/auth.json` (mode 600, not in git). Home mounts the folder read-write; Mission Control and Netwatch read-only. The services notice a change straight away, with no restart.
 - **Changing it:** Settings → Account. If the password is forgotten: `python3 scripts/set-admin-password.py | ssh <user>@192.168.1.14 'cat > /volume1/docker/admin-auth/auth.json; chmod 600 /volume1/docker/admin-auth/auth.json'`. That logs every device out.
-- **Sessions:** 30 days with "remember", otherwise 12 hours or until the browser closes. Cookies are per hostname, so the LAN address and the Tailscale name each need their own login.
-- **Wrong passwords:** after 5 failures from one address, wait 30 s, doubling up to 15 min.
+- **Sign-in:** the password, or a **passkey** (Face ID / Touch ID) with *Sign in with passkey* on the login dialog. The password stays as the fallback.
+- **Passkeys:** added and removed in Home → Settings → Account (only over HTTPS). They are stored in `admin-auth/passkeys.json` (mode 600, not in git, written by Home only) and work for all three services. Home needs the `cryptography` package for this (pinned in its `Dockerfile`).
+- **Sessions:** 30 days with "remember", otherwise 12 hours or until the browser closes. Cookies are per hostname, so the LAN address and the Tailscale name each need their own login. Over HTTPS the cookie gets the `Secure` flag.
+- **Wrong passwords:** after 5 failures from one address, wait 30 s, doubling up to 15 min. Behind Caddy the address is the real client (the last `X-Forwarded-For` entry).
 - **If the file is missing or invalid:** every login is refused, locked routes stay locked, and each service logs why at start-up.
 
 **Owner's page layout.** Desktop fits one screen; phones stack and scroll.
@@ -348,7 +360,7 @@ A one-screen page for "what happened?": every chart opens on the last 24 h and g
 | `mc-node-exporter-9100` | CPU, memory, load, temperatures (hwmon), disk I/O, network, md RAID | 127.0.0.1:9100 |
 | `mc-smartctl-exporter-9633` | SMART for `sda`, `sdb`, `nvme0` (see Security) | 127.0.0.1:9633 |
 | `mc-collector-9101` | Own Python (stdlib only): per-container CPU/RAM via the read-only docker proxy, qBittorrent, AdGuard, Speedtest Tracker, Tailscale (local API socket). A failing source only sets `mc_up{source=…} 0` | 127.0.0.1:9101 |
-| `mc-web-8800` | Own Python: serves the page and vendored JS (uPlot, globe.gl, topojson), proxies only Prometheus `query`/`query_range` and Netwatch `/api/state` | **0.0.0.0:8800** |
+| `mc-web-8800` | Own Python: serves the page and vendored JS (uPlot, globe.gl, topojson), proxies only Prometheus `query`/`query_range` and Netwatch `/api/state` | **0.0.0.0:8800** (redirects to HTTPS :8843 when `NAS_TS_NAME` is set) |
 
 - Collector logins are in `mission-control/.env` (keys in `.env.example`).
 - Tailscale's socket is shared through `tailscale/run/` (mounted at `/var/run/tailscale`).
@@ -403,6 +415,39 @@ Screenshots for design checks (headless Firefox inside the UGREEN Firefox app co
 - CDN logos don't render in headless captures; real browsers show them.
 - Headless Firefox never advances animations and has no WebGL: capture Mission Control with `?static` (no animations); the globe can only be checked in a real browser.
 
+### HTTPS and passkeys
+
+The admin pages are served over HTTPS by Caddy ([§3](#3-services)) on the NAS's Tailscale name, `<nas-name>.<tailnet>.ts.net`. Design: [`docs/superpowers/specs/2026-11-13-https-passkeys-design.md`](docs/superpowers/specs/2026-11-13-https-passkeys-design.md).
+
+**Rollout order** (each step keeps everything reachable). The old code trusted every loopback request, so Caddy in front of it would expose Netwatch without a login; hence the new code goes first:
+
+1. Tailscale admin console: switch on HTTPS Certificates (below, step 1).
+2. Deploy the new Home, Mission Control and Netwatch code with `NAS_TS_NAME` empty (loopback narrowing is already active, plain HTTP behaves as before).
+3. Deploy Caddy and verify `https://<name>:8793` answers `302` to the login and `/api/internal/layout` on :3443 answers `401`.
+4. Add the AdGuard rewrite and the UGOS firewall rule for the tailnet (below, steps 2 and 3).
+5. Set `NAS_TS_NAME` in the three `.env` files and recreate the stacks.
+
+**One-time steps by the owner:**
+
+1. Tailscale admin console → DNS → switch on **HTTPS Certificates** (and MagicDNS).
+2. AdGuard Home → Filters → DNS rewrites: `<nas-name>.<tailnet>.ts.net` → `192.168.1.14`. At home the name then resolves to the LAN address, so passkeys work without Tailscale; away from home Tailscale's MagicDNS gives the tailnet address.
+3. UGOS → Control Panel → Security → Firewall: **allow source `100.64.0.0/255.192.0.0`** (the tailnet), all ports. The UGOS firewall (`UG_INPUT`) only accepts `192.168.1.0/24` on `eth0` and Docker's `172.16.0.0/12`, then drops everything else, so without this rule nothing on the NAS answers on its tailnet address (`100.x`), and with Tailscale on the name resolves exactly there. Add it in the UI, not with `iptables`: UGOS regenerates its chains.
+4. Put `NAS_TS_NAME=<nas-name>.<tailnet>.ts.net` in `.env` of `caddy`, `home`, `mission-control` and `netwatch` on the NAS (the name is in `docker exec tailscale tailscale status --json`, `CertDomains`), then `docker compose up -d` in each (`--build` for Home and Mission Control web after code changes).
+5. Uptime Kuma: the existing "Homepage" monitor on `http://192.168.1.14:3001` follows the redirect to the HTTPS address, so it already goes down if Caddy or the certificate fails.
+
+**Plain HTTP once `NAS_TS_NAME` is set.** Ports 3001, 8800 and 8790 on `192.168.1.14` stop serving the admin side: pages answer `301` to the HTTPS address, POST and API calls get `403`. Guest pages included: with `NAS_TS_NAME` set, :3001 redirects to HTTPS too. Exceptions, on Home only, GET/HEAD only: `/tv` and `/tv/…`, `/api/public/tv`, `/api/news` (the public view, not `topic=opened`) and `/iptv.m3u`, so the Fire TV and IPTV players keep working. Without `NAS_TS_NAME` everything stays plain HTTP as before.
+
+**Loopback.** Home, Mission Control and Netwatch read each other over `127.0.0.1`. A loopback request counts as internal only when it carries no `X-Forwarded-*` header, so a request that came through Caddy (which always adds them) never gets the internal exemption.
+
+**Passkeys:**
+
+- **Add:** open `https://<nas-name>.<tailnet>.ts.net:3443/admin/settings` on the device (iPhone, Mac…), Account → type a name (e.g. iPhone) → **Add passkey**, and confirm with Face ID / Touch ID. Each device needs its own.
+- **Remove:** same place, remove it from the list. A lost device: remove its passkey **and** use *Log out everywhere* to end its open session (*Log out everywhere* alone keeps the passkeys).
+- **Sign in:** *Sign in with passkey* on the login dialog. If a passkey fails, the password still works.
+- **Lost everything:** delete `admin-auth/passkeys.json` on the NAS; the password login is unaffected.
+
+Check from the NAS: `curl -sS -o /dev/null -w "%{http_code} %{ssl_verify_result}\n" --resolve "$NAME:3443:127.0.0.1" https://$NAME:3443/` should print `200 0`. `docker logs caddy` shows the certificate being obtained.
+
 Root-only tasks:
 
 - Running root commands through a privileged container is deliberately not done.
@@ -415,10 +460,10 @@ Root-only tasks:
 | Exposure | No automatic port forwards (UPnP silent). Remote access only through Tailscale, which needs your account; nothing is opened on the router. |
 | Logins | AdGuard, qBittorrent, Uptime Kuma, Dockge, AutoBangumi and Speedtest Tracker each have their own admin account. Defaults (AutoBangumi `admin/adminadmin`, Speedtest `admin@example.com/password`) must be changed. |
 | Docker socket | Dockge has full access (root-equivalent). Home and Mission Control only get the read-only proxy (also on `127.0.0.1:2375`, NAS-local). |
-| Home | The only writes are `POST /api/attention/<id>/dismiss|ack`, which change Home's own `data/state.json`. Feed text is reduced to plain text and escaped before display. No login (LAN + tailnet only). |
+| Home | The guest page and its APIs need no login (LAN + tailnet only). With HTTPS on, the plain-HTTP port 3001 serves only GET/HEAD for `/tv`, `/api/public/tv`, `/api/news` (public view) and `/iptv.m3u`; everything else redirects or is refused. Feed text is reduced to plain text and escaped before display. |
 | Raw disk access | `mc-smartctl-exporter-9633` gets exactly `/dev/sda`, `/dev/sdb`, `/dev/nvme0` with `SYS_RAWIO`/`SYS_ADMIN` to read SMART (approved 2026-11-06). Not privileged. |
-| Mission Control | Prometheus, exporters and collector listen on `127.0.0.1` only; the page (:8800) exposes read-only queries, never Prometheus' admin API. Every path needs the admin login. |
-| Admin login | Home's `/admin/` and APIs, Mission Control and Netwatch refuse without the session cookie (HttpOnly, SameSite=Strict). Netwatch skips the check for requests from `127.0.0.1`, because Home and Mission Control read it over loopback. Over plain HTTP until HTTPS arrives (#6), the password and cookie travel unencrypted on the home network (Tailscale encrypts its own traffic), and other apps on the same address also receive the cookie. |
+| Mission Control | Prometheus, exporters and collector listen on `127.0.0.1` only; the page (served on :8843 over HTTPS; plain :8800 redirects) exposes read-only queries, never Prometheus' admin API. Every path needs the admin login. |
+| Admin login | Home's `/admin/` and APIs, Mission Control and Netwatch refuse without the session cookie (HttpOnly, SameSite=Strict). Admin pages are served over HTTPS (Caddy, certificate from Tailscale) and the session cookie is `Secure`. Plain HTTP on the old ports redirects or refuses, so the password no longer travels in clear. Passkeys (Face ID / Touch ID) sign in without typing the password; the password stays as fallback. Loopback is trusted only for internal calls without `X-Forwarded-*` headers. |
 | Glances | Its own password (`glances/data/glances.pwd`, a hash, not in git). `/api/4/status` (version only), `/docs` and `/openapi.json` (generic API description) stay open; they hold no system data, and everything else answers 401. |
 | Secrets | `.env` files and app data are never committed. See `.gitignore` and the `.env.example` files. |
 | Runs as root | The UGREEN qBittorrent app uses `PUID=0`/`PGID=0`. |
@@ -427,16 +472,26 @@ Root-only tasks:
 
 ## 11. Known issues and next steps
 
-The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features (HTTPS/passkeys), operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
+Known limits of HTTPS:
+
+- **Secure DNS / iCloud Private Relay on a device at home:** the device bypasses AdGuard, so the Tailscale name doesn't resolve to the LAN address and HTTPS fails (without Tailscale). Turn them off for the home Wi-Fi, or connect Tailscale.
+- **Devices that bypass AdGuard** (secure DNS, Private Relay) also lose the guest page at home, because :3001 now redirects to the HTTPS name they can't resolve. The TV page and playlist still work.
+- **Emergency fallback:** if Caddy or the certificate fails, blank `NAS_TS_NAME` in the `.env` of `home`, `mission-control` and `netwatch` and run `docker compose up -d` in each. Plain-HTTP access with the password comes back.
+- **Caddy down:** the admin pages are unreachable over HTTPS (plain HTTP no longer serves them). Uptime Kuma's "Homepage" monitor alerts; fix with `docker compose up -d` in `caddy`.
+- **Stale DNS on a phone:** after switching Tailscale off, iOS may keep the tailnet address for the name for a while. It still works thanks to the firewall rule above; airplane mode on/off clears the cache.
+
+The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features, operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
 
 ## 12. Changelog
 
 **2026-11-13**
 
 - **iPhone backup** stack: encrypted daily backup over Wi-Fi (usbmuxd + netmuxd + libimobiledevice). First full backup over USB (93 GB). iOS 27 wants the PIN for every backup, so it runs in the evening with an ntfy PIN prompt.
+- **HTTPS and passkeys** (#6): Caddy serves Home (:3443), Mission Control (:8843) and Netwatch (:8793) on the Tailscale name with a Tailscale certificate. Plain-HTTP ports redirect pages and refuse writes, except the TV, public news and playlist paths. The session cookie is `Secure`; loopback is trusted only without `X-Forwarded-*`; the login throttle uses the real client address. Passkeys (Face ID / Touch ID) added in Settings → Account, with the password as fallback. Home now depends on `cryptography`. AdGuard rewrite added. UGOS firewall rule for the tailnet (`100.64.0.0/10`), which it had silently been dropping.
 
 **2026-11-08**
 
+- **IPTV filter:** `/iptv.m3u` keeps only Chinese (recognised broadcasters), English and Italian channels plus motorsport and finance, in a fixed menu order; religious, kids, music, adult and partisan news channels are removed.
 - **IPTV:** channel status card, clean playlist at `/iptv.m3u` and a page to add, remove and check lists. Fixes from a code review: private addresses are refused, a slow server can't stall the check, empty answers don't count as online and a list that can't be read keeps its last results.
 - **TV idle page** at `/tv`: bilingual clock, weather, tip, news and new episodes on the TV (#4).
 

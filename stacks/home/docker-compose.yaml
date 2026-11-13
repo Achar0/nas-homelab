@@ -11,6 +11,8 @@ services:
       - .env                        # QBT_USER/QBT_PASS, KUMA_API_KEY, NTFY_URL (not in git)
     environment:
       PORT: 3001
+      NAS_TS_NAME: ${NAS_TS_NAME:-}
+      HTTPS_PORT: "3443"
       DATA_DIR: /data
       TZ: Europe/Rome
       PROM_URL: http://127.0.0.1:9090
