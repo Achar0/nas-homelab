@@ -13,8 +13,11 @@ ALERT_HOURS=${ALERT_HOURS:-72}     # past this, send one ntfy alert per day
 while true; do
     sleep 900
     [ -n "$(udid)" ] || continue                     # not paired yet
-    LAST=$(cat "$STATE/last_success" 2>/dev/null || echo 0)
+    # never backed up yet → count from the pairing time, not from 1970
+    LAST=$(cat "$STATE/last_success" 2>/dev/null || stat -c %Y "$UDID_FILE")
     AGE_H=$(( ($(date +%s) - LAST) / 3600 ))
+    # a backup is running right now (e.g. the first one over USB): nothing to do
+    flock -n "$STATE/backup.lock" true || continue
     HOUR=$((10#$(date +%H)))
 
     if [ "$AGE_H" -ge "$ALERT_HOURS" ] && [ "$(cat "$STATE/alerted" 2>/dev/null)" != "$(date +%F)" ]; then
