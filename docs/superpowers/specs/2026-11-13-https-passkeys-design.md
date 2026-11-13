@@ -48,7 +48,8 @@ So the HTTPS name must also work at home without Tailscale.
   3001 / 8800 / 8790, sharing `auth.py` (three identical copies, checked by `tests/test_auth.py`).
 - Netwatch skips the login check for requests from loopback (`LOOPBACK`, `app.py:362`), because Home
   and Mission Control read it over `127.0.0.1`. A reverse proxy on the same host also connects from
-  loopback, so this check must change or the proxy becomes a login bypass.
+  loopback, so this check must change or the proxy becomes a login bypass. Home's
+  `/api/internal/layout` (read by Mission Control) has the same loopback check and the same fix.
 - Issuing the certificate puts `<nas-name>.<tailnet>.ts.net` in the public Certificate Transparency
   logs. The user accepted this: the name only resolves inside the tailnet or through home DNS.
 
