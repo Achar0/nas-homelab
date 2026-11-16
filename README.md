@@ -490,6 +490,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 **2026-11-16**
 
 - **Interactive map** ([`site/`](site/)): a static page (plain SVG + JS, no build) with every component from this README, in the same Apple-style system as Home and Mission Control (their tokens, dark first with light following the system, no nested boxes). Click one for its facts, notes and what breaks if it fails; Network / Services / Storage views; guided flows (Home page at home, Mission Control from outside, a new episode, an outage alert); a failure simulator that propagates through the dependencies. Published to GitHub Pages by `.github/workflows/pages.yml`. **Keep `site/js/data.js` in sync with this README** when services change.
+- **Map readability:** cards sit on a grid and every line is routed through the gaps between them (horizontal/vertical runs, one lane per line, rounded corners), so each connection can be followed end to end. Secondary links (metrics scrapes, internet egress, Home's stat reads) are hidden in "All" and appear in their own view or when a card is hovered. Each section (Outside, Home network, Edge, Own apps, Media, Monitoring & ops, Storage) is a soft panel.
 
 **2026-11-13**
 

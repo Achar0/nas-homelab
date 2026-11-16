@@ -21,6 +21,7 @@
   --glass: rgba(44, 44, 46, 0.6);
   --glass-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 40px rgba(0, 0, 0, 0.5);
   --grid: #1a1a1c;
+  --region: rgba(255, 255, 255, 0.045);
 
   /* Link colours: Apple system colours, one per meaning */
   --l-wan: #0A84FF;
@@ -43,6 +44,7 @@
     --glass: rgba(255, 255, 255, 0.7);
     --glass-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06), 0 12px 40px rgba(0, 0, 0, 0.12);
     --grid: #e3e3e8;
+    --region: rgba(0, 0, 0, 0.035);
     --l-lan: #aeaeb2; --l-app: #8e8e93; --l-push: #d6a800; --l-storage: #32ade6;
   }
 }
@@ -199,9 +201,11 @@ h1, h2, h3, p { margin: 0; }
 .grid-dot { fill: var(--grid); }
 .region-title { fill: var(--text); font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
 .region-sub { fill: var(--text-2); font-size: 14px; }
-.col-label { fill: var(--text-3); font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+/* Section panels: a soft fill with a hairline edge, the label inside */
+.region { fill: var(--region); stroke: var(--hairline); stroke-width: 1; }
+.region-label { fill: var(--text-2); font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 
-.link { fill: none; stroke-width: 1.6; opacity: 0.45; transition: opacity 200ms var(--ease); }
+.link { fill: none; stroke-width: 1.6; opacity: 0.6; stroke-linejoin: round; transition: opacity 200ms var(--ease); }
 .link-flow { fill: none; stroke-width: 2.2; stroke-dasharray: 3 14; stroke-linecap: round; opacity: 0; animation: flow 1.4s linear infinite; }
 @keyframes flow { to { stroke-dashoffset: -17; } }
 .link-label { font-size: 11px; fill: var(--text-2); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; opacity: 0; transition: opacity 200ms var(--ease); }
