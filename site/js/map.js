@@ -3,8 +3,14 @@
   "use strict";
   const D = window.HOMELAB;
   const NS = "http://www.w3.org/2000/svg";
-  const W = 1800, H = 1100;          // world size
+  const W = 1800, H = 1080;          // world size
   const NW = 200, NH = 58;           // node card size
+  // Grid: cards sit in cells; lines only travel through the gaps between cells.
+  const COLW = 300, ROWH = 120;      // cell pitch (gaps: 100 wide, 62 tall)
+  const PAD = 16, HEAD = 40;         // section panel padding and label height
+  const LANE = 8;                    // distance between parallel lines in a gap
+  const colX = (c) => 150 + c * COLW;
+  const rowY = (r) => 210 + r * ROWH + (r >= 5 ? 70 : 0);   // storage rows get extra space above
   const $ = (s) => document.querySelector(s);
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -44,6 +50,10 @@
     return e;
   };
   const byId = Object.fromEntries(D.nodes.map((n) => [n.id, n]));
+  D.nodes.forEach((n) => { n.x = colX(n.col); n.y = rowY(n.row); });
+  const occ = {};
+  D.nodes.forEach((n) => { occ[n.col + "," + n.row] = n; });
+  const maxCol = Math.max(...D.nodes.map((n) => n.col)), maxRow = Math.max(...D.nodes.map((n) => n.row));
   const linkColor = (t) => `stroke: var(--l-${t})`;
 
   // ---------- build the SVG ----------
@@ -59,62 +69,153 @@
   const gNodes = el("g", {}, root);
   const gFx = el("g", {}, root);
 
-  // Region title and column labels only: no frames, no nested boxes
-  for (const g of D.groups) {
-    if (!g.sub) {
-      el("text", { class: "region-title", x: g.x + 30, y: g.y + 30 }, gGroups).textContent = g.label;
-      if (g.note) el("text", { class: "region-sub", x: g.x + 30, y: g.y + 52 }, gGroups).textContent = g.note;
-    } else {
-      el("text", { class: "col-label", x: g.x + 10, y: g.y + 40 }, gGroups).textContent = g.label;
-    }
-  }
-  // Each node's column, shown as the tag in the detail card
-  const groupOf = (n) => D.groups.find((g) => g.sub && n.x >= g.x && n.x <= g.x + g.w && n.y >= g.y && n.y <= g.y + g.h);
-
-  // Links. Pairs with several links get a small perpendicular offset.
-  const pairCount = {};
-  D.links.forEach((l) => {
-    const k = [l.a, l.b].sort().join("|");
-    l.idx = pairCount[k] = (pairCount[k] || 0) + 1;
+  // Sections: one soft panel each, label inside; the gaps between panels show what belongs where.
+  const regionBox = (g) => ({
+    x: colX(g.c0) - NW / 2 - PAD, y: rowY(g.r0) - NH / 2 - HEAD,
+    w: colX(g.c1) - colX(g.c0) + NW + 2 * PAD, h: rowY(g.r1) - rowY(g.r0) + NH + HEAD + PAD,
   });
+  for (const g of D.groups) {
+    const b = regionBox(g);
+    el("rect", { class: "region", x: b.x, y: b.y, width: b.w, height: b.h, rx: 22 }, gGroups);
+    el("text", { class: "region-label", x: b.x + 18, y: b.y + 26 }, gGroups).textContent = g.label;
+  }
+  {
+    // The NAS sections share one title above them
+    const parts = D.groups.filter((g) => g.part === "nas").map(regionBox);
+    const x = Math.min(...parts.map((b) => b.x)), y = Math.min(...parts.map((b) => b.y));
+    el("text", { class: "region-title", x: x + 4, y: y - 34 }, gGroups).textContent = D.nas.title;
+    el("text", { class: "region-sub", x: x + 4, y: y - 12 }, gGroups).textContent = D.nas.note;
+  }
+  // Each node's section, shown as the tag in the detail card
+  const groupOf = (n) => D.groups.find((g) => n.col >= g.c0 && n.col <= g.c1 && n.row >= g.r0 && n.row <= g.r1);
 
-  function anchors(a, b) {
-    // Leave from the side facing the other node.
-    const dx = b.x - a.x, dy = b.y - a.y;
-    if (Math.abs(dx) > NW * 0.9 || Math.abs(dy) < NH) {
-      const s = Math.sign(dx) || 1;
-      return [[a.x + s * NW / 2, a.y], [b.x - s * NW / 2, b.y], "h"];
+  // ---------- line routing ----------
+  // Every line runs horizontally/vertically through the gaps, each in its own lane,
+  // with rounded corners, so it can be followed by eye from end to end.
+  const vGapX = (g) => colX(g) + COLW / 2;                 // gap right of column g
+  const hGapY = (r) => (rowY(r) + rowY(r + 1)) / 2;        // gap below row r
+  const emptyBetweenRows = (c, r1, r2) => { for (let r = Math.min(r1, r2) + 1; r < Math.max(r1, r2); r++) if (occ[c + "," + r]) return false; return true; };
+  const emptyBetweenCols = (r, c1, c2) => { for (let c = Math.min(c1, c2) + 1; c < Math.max(c1, c2); c++) if (occ[c + "," + r]) return false; return true; };
+
+  function plan(l) {
+    const A = byId[l.a], B = byId[l.b], dc = B.col - A.col, dr = B.row - A.row;
+    if (dc === 0 && emptyBetweenRows(A.col, A.row, B.row)) {
+      return { kind: "v", sideA: dr > 0 ? "bottom" : "top", sideB: dr > 0 ? "top" : "bottom" };
     }
-    const s = Math.sign(dy) || 1;
-    return [[a.x, a.y + s * NH / 2], [b.x, b.y - s * NH / 2], "v"];
+    if (dc === 0) {
+      const right = A.col < maxCol, side = right ? "right" : "left";
+      return { kind: "same", sideA: side, sideB: side, gA: right ? A.col : A.col - 1 };
+    }
+    const s = Math.sign(dc), sideA = s > 0 ? "right" : "left", sideB = s > 0 ? "left" : "right";
+    const gA = s > 0 ? A.col : A.col - 1, gB = s > 0 ? B.col - 1 : B.col;
+    if (gA === gB || (dr === 0 && emptyBetweenCols(A.row, A.col, B.col))) return { kind: "z", sideA, sideB, gA };
+    let hr = dr > 0 ? A.row : dr < 0 ? A.row - 1 : (A.row < maxRow ? A.row : A.row - 1);
+    hr = Math.max(0, Math.min(maxRow - 1, hr));
+    return { kind: "g", sideA, sideB, gA, gB, hr };
   }
 
-  function linkPath(l) {
-    const A = byId[l.a], B = byId[l.b];
-    let [[x1, y1], [x2, y2], dir] = anchors(A, B);
-    const k = [l.a, l.b].sort().join("|");
-    if (pairCount[k] > 1) {
-      const off = (l.idx - (pairCount[k] + 1) / 2) * 12;
-      if (dir === "h") { y1 += off; y2 += off; } else { x1 += off; x2 += off; }
+  // Lines leaving the same side of a card get separate ports, ordered by where they head.
+  function assignPorts(links) {
+    const sides = {};
+    for (const l of links) {
+      const A = byId[l.a], B = byId[l.b], p = l.plan;
+      const head = (other) => p.kind === "g" ? hGapY(p.hr) : other.y;
+      (sides[l.a + p.sideA] ||= []).push({ l, end: "A", key: p.sideA.match(/top|bottom/) ? B.x : head(B) });
+      (sides[l.b + p.sideB] ||= []).push({ l, end: "B", key: p.sideB.match(/top|bottom/) ? A.x : head(A) });
     }
-    const c = dir === "h" ? Math.max(40, Math.abs(x2 - x1) * 0.45) : Math.max(30, Math.abs(y2 - y1) * 0.45);
-    const [c1, c2] = dir === "h"
-      ? [[x1 + Math.sign(x2 - x1) * c, y1], [x2 - Math.sign(x2 - x1) * c, y2]]
-      : [[x1, y1 + Math.sign(y2 - y1) * c], [x2, y2 - Math.sign(y2 - y1) * c]];
-    return `M${x1},${y1} C${c1} ${c2} ${x2},${y2}`;
+    for (const [k, list] of Object.entries(sides)) {
+      list.sort((a, b) => a.key - b.key);
+      const vertical = /top|bottom/.test(k), n = list.length;
+      const step = vertical ? 18 : Math.min(12, 40 / Math.max(1, n - 1));
+      list.forEach((e, i) => { e.l["off" + e.end] = (i - (n - 1) / 2) * step; });
+    }
+  }
+  function port(n, side, off) {
+    if (side === "right") return [n.x + NW / 2, n.y + off];
+    if (side === "left") return [n.x - NW / 2, n.y + off];
+    if (side === "bottom") return [n.x + off, n.y + NH / 2];
+    return [n.x + off, n.y - NH / 2];
+  }
+
+  // Lane allocation: within each gap, a line takes the lane nearest the centre that is free over its span.
+  function takeLane(lanes, key, a, b) {
+    const lo = Math.min(a, b) - 10, hi = Math.max(a, b) + 10;
+    const used = (lanes[key] ||= {});
+    for (let i = 0; i < 40; i++) {
+      const idx = i % 2 ? (i + 1) / 2 : -i / 2;
+      const iv = (used[idx] ||= []);
+      if (iv.every(([x, y]) => hi < x || lo > y)) { iv.push([lo, hi]); return idx * LANE; }
+    }
+    return 0;
+  }
+
+  function routeLinks(links, lanes) {
+    for (const l of links) {
+      const A = byId[l.a], B = byId[l.b], p = l.plan;
+      const pA = port(A, p.sideA, l.offA), pB = port(B, p.sideB, l.offB);
+      let pts;
+      if (p.kind === "v") pts = [pA, pB];
+      else if (p.kind === "same" || p.kind === "z") {
+        const x = vGapX(p.gA) + takeLane(lanes, "v" + p.gA, pA[1], pB[1]);
+        pts = [pA, [x, pA[1]], [x, pB[1]], pB];
+      } else {
+        const y = hGapY(p.hr) + takeLane(lanes, "h" + p.hr, vGapX(p.gA), vGapX(p.gB));
+        const xa = vGapX(p.gA) + takeLane(lanes, "v" + p.gA, pA[1], y);
+        const xb = vGapX(p.gB) + takeLane(lanes, "v" + p.gB, y, pB[1]);
+        pts = [pA, [xa, pA[1]], [xa, y], [xb, y], [xb, pB[1]], pB];
+      }
+      l.geom = rounded(pts);
+    }
+  }
+
+  function rounded(pts, r = 10) {
+    const P = [];
+    for (const p of pts) { const q = P[P.length - 1]; if (!q || Math.abs(q[0] - p[0]) > 0.5 || Math.abs(q[1] - p[1]) > 0.5) P.push(p); }
+    for (let i = P.length - 2; i > 0; i--) {     // drop points in the middle of a straight run
+      const [a, b, c] = [P[i - 1], P[i], P[i + 1]];
+      if ((Math.abs(a[0] - b[0]) < 0.5 && Math.abs(b[0] - c[0]) < 0.5) || (Math.abs(a[1] - b[1]) < 0.5 && Math.abs(b[1] - c[1]) < 0.5)) P.splice(i, 1);
+    }
+    let d = `M${P[0]}`, best = null, bestLen = -1;
+    for (let i = 1; i < P.length; i++) {
+      const len = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+      if (len > bestLen) { bestLen = len; best = [P[i - 1], P[i]]; }
+    }
+    for (let i = 1; i < P.length - 1; i++) {
+      const [a, b, c] = [P[i - 1], P[i], P[i + 1]];
+      const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      const rr = Math.min(r, l1 / 2, l2 / 2);
+      const p1 = [b[0] + (a[0] - b[0]) / l1 * rr, b[1] + (a[1] - b[1]) / l1 * rr];
+      const p2 = [b[0] + (c[0] - b[0]) / l2 * rr, b[1] + (c[1] - b[1]) / l2 * rr];
+      d += ` L${p1} Q${b} ${p2}`;
+    }
+    d += ` L${P[P.length - 1]}`;
+    // Label on the middle of the longest straight run
+    const vertical = Math.abs(best[0][0] - best[1][0]) < 0.5;
+    const label = { x: (best[0][0] + best[1][0]) / 2 + (vertical ? 6 : 0), y: (best[0][1] + best[1][1]) / 2 - (vertical ? 0 : 5), anchor: vertical ? "start" : "middle" };
+    return { d, label };
   }
 
   for (const l of D.links) {
-    const g = el("g", { class: "lg" + (l.quiet ? " quiet" : ""), "data-type": l.type }, gLinks);
-    const d = linkPath(l);
-    l.path = el("path", { class: "link", d, style: linkColor(l.type) }, g);
-    if (!reduceMotion) el("path", { class: "link-flow", d, style: linkColor(l.type) }, g);
-    if (l.label) {
-      const len = l.path.getTotalLength();
-      const p = l.path.getPointAtLength(len / 2);
-      el("text", { class: "link-label", x: p.x, y: p.y - 5, "text-anchor": "middle" }, g).textContent = l.label;
-    }
+    l.plan = plan(l);
+    const g = el("g", { class: "lg", "data-type": l.type }, gLinks);
+    l.path = el("path", { class: "link", style: linkColor(l.type) }, g);
+    if (!reduceMotion) l.flowPath = el("path", { class: "link-flow", style: linkColor(l.type) }, g);
+    if (l.label) { l.text = el("text", { class: "link-label" }, g); l.text.textContent = l.label; }
     l.g = g;
+  }
+  assignPorts(D.links);
+
+  // Lines visible by default are routed first so they get the central lanes; the rest
+  // (quiet or switched off) take the outer lanes and appear only on focus.
+  function reroute(isShown) {
+    const lanes = {};
+    routeLinks(D.links.filter(isShown), lanes);
+    routeLinks(D.links.filter((l) => !isShown(l)), lanes);
+    for (const l of D.links) {
+      l.path.setAttribute("d", l.geom.d);
+      if (l.flowPath) l.flowPath.setAttribute("d", l.geom.d);
+      if (l.text) { l.text.setAttribute("x", l.geom.label.x); l.text.setAttribute("y", l.geom.label.y); l.text.setAttribute("text-anchor", l.geom.label.anchor); }
+    }
   }
 
   // Nodes
@@ -297,6 +398,13 @@
     D.links.forEach((l) => l.g.classList.toggle("hl", !!links && links.has(l)));
   }
 
+  // Focus a node: its lines and neighbours stay bright, everything else dims.
+  function focusNode(id) {
+    const links = new Set(D.links.filter((l) => l.a === id || l.b === id));
+    const ids = new Set([id]); links.forEach((l) => { ids.add(l.a); ids.add(l.b); });
+    highlight(ids, links);
+  }
+
   function select(id) {
     selected = id;
     D.nodes.forEach((n) => n.g.classList.toggle("sel", n.id === id));
@@ -307,11 +415,7 @@
     }
     // In failure mode keep everything visible so the states stay readable.
     if (failMode) highlight(null);
-    else {
-      const links = new Set(D.links.filter((l) => l.a === id || l.b === id));
-      const ids = new Set([id]); links.forEach((l) => { ids.add(l.a); ids.add(l.b); });
-      highlight(ids, links);
-    }
+    else focusNode(id);
     fillDrawer(id);
     clearTimeout(closeT);
     $("#drawer").classList.remove("closing");
@@ -391,14 +495,21 @@
   };
   const typeOn = Object.fromEntries(Object.keys(D.linkTypes).map((t) => [t, true]));
 
+  let currentView = "all";
+  const isShown = (l) => typeOn[l.type] && !(l.quiet && currentView === "all");
   function applyLayers() {
-    D.links.forEach((l) => l.g.classList.toggle("off", !typeOn[l.type]));
+    D.links.forEach((l) => {
+      l.g.classList.toggle("off", !typeOn[l.type]);
+      l.g.classList.toggle("quiet", !!l.quiet && currentView === "all");
+    });
+    reroute(isShown);
     const touched = new Set();
     D.links.forEach((l) => { if (typeOn[l.type]) { touched.add(l.a); touched.add(l.b); } });
     D.nodes.forEach((n) => { n.g.style.opacity = touched.has(n.id) ? "" : "0.3"; });
     document.querySelectorAll("#legend-links button").forEach((b) => b.setAttribute("aria-pressed", typeOn[b.dataset.type]));
   }
   function setView(v) {
+    currentView = v;
     document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-checked", b.dataset.view === v));
     for (const t in typeOn) typeOn[t] = VIEWS[v].includes(D.linkTypes[t].layer);
     applyLayers();
@@ -414,6 +525,7 @@
     b.append(document.createTextNode(info.label));
     b.onclick = () => {
       typeOn[t] = !typeOn[t];
+      currentView = "custom";
       document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-checked", "false"));
       applyLayers();
     };
@@ -535,6 +647,18 @@
     else if ("1234".includes(e.key) && e.key.length === 1) setView(["network", "services", "storage", "all"][+e.key - 1]);
     else if (e.key === "f" || e.key === "F") setFailMode(!failMode);
     else if (e.key === "Escape") { closeMenu(); if (flow) stopFlow(); else if (selected) select(null); else if (failMode) setFailMode(false); }
+  });
+
+  // Hover a card (mouse): preview its lines without clicking.
+  gNodes.addEventListener("pointerover", (e) => {
+    const node = e.target.closest(".node");
+    if (e.pointerType !== "mouse" || !node || selected || flow || failMode || pointers.size) return;
+    focusNode(node.dataset.id);
+  });
+  gNodes.addEventListener("pointerout", (e) => {
+    const node = e.target.closest(".node");
+    if (e.pointerType !== "mouse" || !node || node.contains(e.relatedTarget)) return;
+    if (!selected && !flow) highlight(null);
   });
 
   // Deep links: #caddy opens Caddy
