@@ -15,7 +15,9 @@ window.HOMELAB = {
   repo: "https://github.com/Achar0/nas-homelab",
 
   groups: [
-    { id: "nas", label: "NAS · UGREEN DXP4800 · 192.168.1.14", x: 720, y: 60, w: 1040, h: 1000 },
+    { id: "outside", label: "Outside", x: 20, y: 110, w: 210, h: 640, sub: true },
+    { id: "lan", label: "Home network", x: 255, y: 110, w: 420, h: 640, sub: true },
+    { id: "nas", label: "NAS", note: "UGREEN DXP4800 · 192.168.1.14", x: 720, y: 20, w: 1040, h: 1040 },
     { id: "edge", label: "Edge", x: 750, y: 110, w: 210, h: 640, sub: true },
     { id: "apps", label: "Own apps", x: 990, y: 110, w: 210, h: 640, sub: true },
     { id: "media", label: "Media", x: 1230, y: 110, w: 210, h: 470, sub: true },
@@ -47,7 +49,7 @@ window.HOMELAB = {
       onFail: "The whole LAN is cut off: no Wi-Fi, no internet, no NAS from phones or TV.",
     },
     {
-      id: "clients", label: "Phones · laptop", sub: "LAN, Wi-Fi", icon: "laptop", x: 560, y: 330,
+      id: "clients", label: "Phones & laptop", sub: "LAN, Wi-Fi", icon: "laptop", x: 560, y: 330,
       needs: ["router"], soft: ["adguard", "caddy"],
       facts: { "DNS": "AdGuard (via DHCP)", "Admin pages": "HTTPS :3443 / :8843 / :8793" },
       notes: ["Secure DNS or iCloud Private Relay bypass AdGuard; then the Tailscale name doesn't resolve to the LAN address at home."],
