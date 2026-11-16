@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NAS Homelab · infrastructure map</title>
+  <meta name="description" content="Interactive map of a home NAS: network, services, storage, guided flows and failure simulation.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <a class="skip" href="#map">Skip to map</a>
+
+  <main id="stage">
+    <svg id="map" tabindex="0" role="application"
+         aria-label="Infrastructure map. Tab moves between components, Enter opens details, arrow keys pan, plus and minus zoom."></svg>
+  </main>
+
+  <!-- Top bar: title, view, actions -->
+  <header class="bar top">
+    <div class="brand panel">
+      <svg viewBox="0 0 24 24" class="brand-icon" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><circle cx="7" cy="7.5" r="1"/><circle cx="7" cy="16.5" r="1"/></svg>
+      <div>
+        <h1>NAS Homelab</h1>
+        <p class="muted" id="reviewed"></p>
+      </div>
+    </div>
+
+    <div class="panel seg" role="radiogroup" aria-label="View">
+      <button role="radio" data-view="network" aria-checked="false" title="Network (1)">Network</button>
+      <button role="radio" data-view="services" aria-checked="false" title="Services (2)">Services</button>
+      <button role="radio" data-view="storage" aria-checked="false" title="Storage (3)">Storage</button>
+      <button role="radio" data-view="all" aria-checked="true" title="Everything (4)">All</button>
+    </div>
+
+    <div class="panel actions">
+      <button id="btn-flows" aria-haspopup="true" aria-expanded="false">Show me</button>
+      <button id="btn-fail" aria-pressed="false" title="Click components to fail them (F)"><span class="long">Simulate failure</span><span class="short">Failure</span></button>
+      <a id="repo" class="icon-btn" title="Source on GitHub" aria-label="Source on GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></svg>
+      </a>
+    </div>
+
+    <div id="flow-menu" class="panel menu" role="menu" hidden></div>
+  </header>
+
+  <!-- Failure banner -->
+  <div id="fail-bar" class="panel fail-bar" hidden>
+    <span id="fail-text">Click any component to fail it.</span>
+    <button id="btn-restore">Restore all</button>
+  </div>
+
+  <!-- Guided flow player -->
+  <section id="flow" class="panel flow" aria-live="polite" hidden>
+    <div class="flow-head">
+      <strong id="flow-title"></strong>
+      <button class="icon-btn" id="flow-close" aria-label="Close flow">✕</button>
+    </div>
+    <p id="flow-caption"></p>
+    <div class="flow-ctrl">
+      <button id="flow-prev" aria-label="Previous step">‹</button>
+      <span id="flow-count" class="muted"></span>
+      <button id="flow-next" aria-label="Next step">›</button>
+    </div>
+  </section>
+
+  <!-- Detail drawer -->
+  <aside id="drawer" class="panel drawer" aria-labelledby="d-title" hidden>
+    <div class="d-head">
+      <div>
+        <h2 id="d-title"></h2>
+        <p id="d-sub" class="muted"></p>
+      </div>
+      <button class="icon-btn" id="d-close" aria-label="Close details">✕</button>
+    </div>
+    <p id="d-state" class="state"></p>
+    <dl id="d-facts"></dl>
+    <ul id="d-notes"></ul>
+    <div id="d-if" class="d-if"></div>
+    <div id="d-rel"></div>
+    <button id="d-toggle" class="wide"></button>
+  </aside>
+
+  <!-- Legend and zoom -->
+  <footer class="bar bottom">
+    <details class="panel legend" id="legend">
+      <summary>Legend</summary>
+      <div id="legend-links"></div>
+      <div class="legend-states">
+        <span><i class="led ok"></i>Running</span>
+        <span><i class="led degraded"></i>Degraded</span>
+        <span><i class="led down"></i>Down (dependency)</span>
+        <span><i class="led failed"></i>Failed</span>
+      </div>
+      <p class="muted small">Drag to pan · scroll or pinch to zoom · click a component for details. Flows are illustrative; no live data.</p>
+    </details>
+    <div class="panel zoom">
+      <button id="z-in" aria-label="Zoom in">+</button>
+      <button id="z-out" aria-label="Zoom out">−</button>
+      <button id="z-fit" aria-label="Fit to screen" title="Fit (0)">⤢</button>
+    </div>
+  </footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/map.js"></script>
+</body>
+</html>

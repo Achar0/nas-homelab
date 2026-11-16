@@ -7,6 +7,7 @@ Every Docker stack running on the NAS is mirrored here, with secrets removed, so
 - **Home admin** (the owner's page, behind the admin login): `https://<nas-name>.<tailnet>.ts.net:3443/admin/`
 - **Mission Control** (performance history): `https://<nas-name>.<tailnet>.ts.net:8843` — needs the admin login
 - **Last full review:** 2026-11-06
+- **Interactive map:** https://achar0.github.io/nas-homelab/ — every component, its links and dependencies, guided flows and a failure simulator. Source in [`site/`](site/); topology in [`site/js/data.js`](site/js/data.js).
 
 ---
 
@@ -485,6 +486,10 @@ Known limits of HTTPS:
 The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/issues)**: planned features, operations (off-site backup, checks after app updates), wishlist items and the small fixes deferred from code reviews.
 
 ## 12. Changelog
+
+**2026-11-16**
+
+- **Interactive map** ([`site/`](site/)): a static page (plain SVG + JS, no build) with every component from this README. Click one for its facts, notes and what breaks if it fails; Network / Services / Storage views; guided flows (Home page at home, Mission Control from outside, a new episode, an outage alert); a failure simulator that propagates through the dependencies. Published to GitHub Pages by `.github/workflows/pages.yml`. **Keep `site/js/data.js` in sync with this README** when services change.
 
 **2026-11-13**
 
