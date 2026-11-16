@@ -44,31 +44,32 @@
     return e;
   };
   const byId = Object.fromEntries(D.nodes.map((n) => [n.id, n]));
-  const linkColor = (t) => `var(--l-${t})`;
+  const linkColor = (t) => `stroke: var(--l-${t})`;
 
   // ---------- build the SVG ----------
   const svg = $("#map");
   const defs = el("defs", {}, svg);
   const pat = el("pattern", { id: "dots", width: 28, height: 28, patternUnits: "userSpaceOnUse" }, defs);
-  el("circle", { cx: 1, cy: 1, r: 1, fill: "#1b2030" }, pat);
+  el("circle", { class: "grid-dot", cx: 1, cy: 1, r: 1 }, pat);
 
   const root = el("g", { class: "map" }, svg);
-  el("rect", { class: "bg-grid", x: -4000, y: -4000, width: W + 8000, height: H + 8000 }, root);
+  el("rect", { fill: "url(#dots)", x: -4000, y: -4000, width: W + 8000, height: H + 8000 }, root);
   const gGroups = el("g", {}, root);
   const gLinks = el("g", {}, root);
   const gNodes = el("g", {}, root);
   const gFx = el("g", {}, root);
 
-  // Frame and column labels (labels only, no nested boxes)
+  // Region title and column labels only: no frames, no nested boxes
   for (const g of D.groups) {
     if (!g.sub) {
-      el("rect", { class: "frame", x: g.x, y: g.y, width: g.w, height: g.h, rx: 22 }, gGroups);
-      el("text", { class: "frame-label", x: g.x + 24, y: g.y + 32 }, gGroups).textContent = g.label;
+      el("text", { class: "region-title", x: g.x + 30, y: g.y + 30 }, gGroups).textContent = g.label;
+      if (g.note) el("text", { class: "region-sub", x: g.x + 30, y: g.y + 52 }, gGroups).textContent = g.note;
     } else {
       el("text", { class: "col-label", x: g.x + 10, y: g.y + 40 }, gGroups).textContent = g.label;
-      if (g.id === "storage") el("line", { class: "col-rule", x1: g.x, x2: g.x + g.w, y1: g.y, y2: g.y }, gGroups);
     }
   }
+  // Each node's column, shown as the tag in the detail card
+  const groupOf = (n) => D.groups.find((g) => g.sub && n.x >= g.x && n.x <= g.x + g.w && n.y >= g.y && n.y <= g.y + g.h);
 
   // Links. Pairs with several links get a small perpendicular offset.
   const pairCount = {};
@@ -106,8 +107,8 @@
   for (const l of D.links) {
     const g = el("g", { class: "lg" + (l.quiet ? " quiet" : ""), "data-type": l.type }, gLinks);
     const d = linkPath(l);
-    l.path = el("path", { class: "link", d, stroke: linkColor(l.type) }, g);
-    if (!reduceMotion) el("path", { class: "link-flow", d, stroke: linkColor(l.type) }, g);
+    l.path = el("path", { class: "link", d, style: linkColor(l.type) }, g);
+    if (!reduceMotion) el("path", { class: "link-flow", d, style: linkColor(l.type) }, g);
     if (l.label) {
       const len = l.path.getTotalLength();
       const p = l.path.getPointAtLength(len / 2);
@@ -300,7 +301,7 @@
     selected = id;
     D.nodes.forEach((n) => n.g.classList.toggle("sel", n.id === id));
     if (!id) {
-      $("#drawer").hidden = true; highlight(null);
+      closeDrawer(); highlight(null);
       if (location.hash) history.replaceState(null, "", location.pathname + location.search);
       return;
     }
@@ -312,17 +313,33 @@
       highlight(ids, links);
     }
     fillDrawer(id);
+    clearTimeout(closeT);
+    $("#drawer").classList.remove("closing");
     $("#drawer").hidden = false;
+    // Phones: the card is a bottom sheet, so bring the component into the space above it
+    if (innerWidth <= 720) {
+      const n = byId[id], top = safeBox().y, sheet = $("#drawer").getBoundingClientRect().top;
+      animateTo({ k: view.k, x: innerWidth / 2 - n.x * view.k, y: (top + sheet) / 2 - n.y * view.k });
+    }
     history.replaceState(null, "", "#" + id);
+  }
+
+  let closeT;
+  function closeDrawer() {
+    const d = $("#drawer");
+    if (d.hidden) return;
+    d.classList.add("closing");
+    closeT = setTimeout(() => { d.hidden = true; d.classList.remove("closing"); }, reduceMotion ? 0 : 180);
   }
 
   const STATE_TEXT = { ok: "Running", degraded: "Degraded", down: "Down (a dependency failed)", failed: "Failed (simulated)" };
 
   function fillDrawer(id) {
     const n = byId[id], st = status[id] || "ok";
+    $("#d-group").textContent = (groupOf(n) || {}).label || "";
     $("#d-title").textContent = n.label;
     $("#d-sub").textContent = n.sub;
-    $("#d-state").innerHTML = `<i class="led ${st === "ok" ? "" : st}"></i>${STATE_TEXT[st]}`;
+    $("#d-state").innerHTML = `<i class="dot ${st === "ok" ? "" : st}"></i>${STATE_TEXT[st]}`;
 
     const dl = $("#d-facts"); dl.replaceChildren();
     for (const [k, v] of Object.entries(n.facts || {})) {
@@ -334,22 +351,24 @@
     (n.notes || []).forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.append(li); });
     ul.hidden = !(n.notes || []).length;
 
-    $("#d-if").innerHTML = "";
-    const strong = document.createElement("strong"); strong.textContent = "If it fails";
-    $("#d-if").append(strong, document.createTextNode(n.onFail || "—"));
+    $("#d-if").textContent = n.onFail || "—";
 
-    // Relations as clickable chips
+    // Relations as clickable links
     const rel = $("#d-rel"); rel.replaceChildren();
     const section = (title, ids) => {
       if (!ids.length) return;
-      const h = document.createElement("h3"); h.textContent = title; rel.append(h);
-      ids.forEach((rid) => {
+      // Plain text links separated by dots: no chips, no boxes inside the card
+      const h = document.createElement("h3"); h.textContent = title;
+      const p = document.createElement("p"); p.className = "links";
+      ids.forEach((rid, i) => {
+        if (i) { const s = document.createElement("span"); s.className = "sep"; s.textContent = " · "; p.append(s); }
         const b = document.createElement("button");
-        b.className = "chip" + (["failed", "down"].includes(status[rid]) ? " bad" : "");
+        if (["failed", "down"].includes(status[rid])) b.className = "bad";
         b.textContent = byId[rid].label;
         b.onclick = () => select(rid);
-        rel.append(b);
+        p.append(b);
       });
+      rel.append(h, p);
     };
     section("Needs", [...new Set((n.needs || []).flat())]);
     section("Nice to have", (n.soft || []).filter((x) => !(n.needs || []).flat().includes(x)));
@@ -391,7 +410,7 @@
     const b = document.createElement("button");
     b.dataset.type = t; b.setAttribute("aria-pressed", "true");
     const dash = { dns: "5 5", push: "5 5", metrics: "5 5", tunnel: "10 4" }[t] || "";
-    b.innerHTML = `<svg viewBox="0 0 26 8"><line x1="1" y1="4" x2="25" y2="4" stroke="${linkColor(t)}" stroke-width="2.4" stroke-dasharray="${dash}"/></svg>`;
+    b.innerHTML = `<svg viewBox="0 0 26 8"><line x1="1" y1="4" x2="25" y2="4" style="${linkColor(t)}" stroke-width="2.4" stroke-dasharray="${dash}"/></svg>`;
     b.append(document.createTextNode(info.label));
     b.onclick = () => {
       typeOn[t] = !typeOn[t];

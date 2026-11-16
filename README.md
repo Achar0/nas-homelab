@@ -489,7 +489,7 @@ The to-do list lives in **[GitHub Issues](https://github.com/Achar0/nas-homelab/
 
 **2026-11-16**
 
-- **Interactive map** ([`site/`](site/)): a static page (plain SVG + JS, no build) with every component from this README. Click one for its facts, notes and what breaks if it fails; Network / Services / Storage views; guided flows (Home page at home, Mission Control from outside, a new episode, an outage alert); a failure simulator that propagates through the dependencies. Published to GitHub Pages by `.github/workflows/pages.yml`. **Keep `site/js/data.js` in sync with this README** when services change.
+- **Interactive map** ([`site/`](site/)): a static page (plain SVG + JS, no build) with every component from this README, in the same Apple-style system as Home and Mission Control (their tokens, dark first with light following the system, no nested boxes). Click one for its facts, notes and what breaks if it fails; Network / Services / Storage views; guided flows (Home page at home, Mission Control from outside, a new episode, an outage alert); a failure simulator that propagates through the dependencies. Published to GitHub Pages by `.github/workflows/pages.yml`. **Keep `site/js/data.js` in sync with this README** when services change.
 
 **2026-11-13**
 
